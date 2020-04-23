@@ -12,7 +12,7 @@ pub fn set_up_logging() -> Result<(), String> {
 
     let colors_level = colors_line.info(Color::Green);
     let dispatch = fern::Dispatch::new()
-        .level(log::LevelFilter::Debug)
+        .level(log::LevelFilter::Warn)
         .chain({
             let base = if should_color {
                 fern::Dispatch::new().format(move |out, message, record| {
