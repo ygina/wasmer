@@ -399,7 +399,7 @@ fn execute_wasi(
     env_vars: Vec<(&str, &str)>,
     module: wasmer_runtime_core::Module,
     mapped_dirs: Vec<(String, PathBuf)>,
-    _wasm_binary: &[u8],
+    wasm_binary: &[u8],
 ) -> Result<(), String> {
     let name = if let Some(cn) = &options.command_name {
         cn.clone()
@@ -407,8 +407,14 @@ fn execute_wasi(
         options.path.to_str().unwrap().to_owned()
     };
 
-    let args = options.args.iter().cloned().map(|arg| arg.into_bytes());
+    let args: Vec<_> = options.args.iter().cloned().map(|arg| arg.into_bytes()).collect();
     let preopened_files = options.pre_opened_directories.clone();
+
+    let package = wasmer_runtime_core::pkg::Pkg::new()
+        .wasm_binary(wasm_binary.to_vec())
+        .args(args.clone())
+        .envs(&env_vars)
+        .preopen_dirs(preopened_files.clone());
     let mut wasi_state_builder = wasmer_wasi::state::WasiState::new(&name);
     wasi_state_builder
         .args(args)
@@ -430,7 +436,7 @@ fn execute_wasi(
 
     #[allow(unused_mut)] // mut used in feature
     let mut instance = module
-        .instantiate(&import_object)
+        .instantiate(&import_object, Some(package))
         .map_err(|e| format!("Can't instantiate WASI module: {:?}", e))?;
 
     let start: wasmer_runtime::Func<(), ()> =
@@ -787,8 +793,10 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     if let Some(loader) = options.loader {
         let mut import_object = wasmer_runtime_core::import::ImportObject::new();
         import_object.allow_missing_functions = true; // Import initialization might be left to the loader.
+        let package = wasmer_runtime_core::pkg::Pkg::new()
+            .wasm_binary(wasm_binary.to_vec());
         let instance = module
-            .instantiate(&import_object)
+            .instantiate(&import_object, Some(package))
             .map_err(|e| format!("Can't instantiate loader module: {:?}", e))?;
 
         let mut args: Vec<Value> = Vec::new();
@@ -827,8 +835,10 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     if wasmer_emscripten::is_emscripten_module(&module) {
         let mut emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new(&module)?;
         let import_object = wasmer_emscripten::generate_emscripten_env(&mut emscripten_globals);
+        let package = wasmer_runtime_core::pkg::Pkg::new()
+            .wasm_binary(wasm_binary.to_vec());
         let mut instance = module
-            .instantiate(&import_object)
+            .instantiate(&import_object, Some(package))
             .map_err(|e| format!("Can't instantiate emscripten module: {:?}", e))?;
 
         wasmer_emscripten::run_emscripten_instance(
@@ -865,8 +875,10 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
             )?;
         } else {
             let import_object = wasmer_runtime_core::import::ImportObject::new();
+            let package = wasmer_runtime_core::pkg::Pkg::new()
+                .wasm_binary(wasm_binary.to_vec());
             let instance = module
-                .instantiate(&import_object)
+                .instantiate(&import_object, Some(package))
                 .map_err(|e| format!("Can't instantiate module: {:?}", e))?;
 
             let invoke_fn = match options.invoke.as_ref() {

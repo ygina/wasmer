@@ -5,6 +5,7 @@ use crate::{
     cache::{Artifact, Error as CacheError},
     error,
     import::ImportObject,
+    pkg::Pkg,
     structures::{Map, TypedIndex},
     types::{
         FuncIndex, FuncSig, GlobalDescriptor, GlobalIndex, GlobalInit, ImportedFuncIndex,
@@ -134,8 +135,12 @@ impl Module {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn instantiate(&self, import_object: &ImportObject) -> error::Result<Instance> {
-        Instance::new(Arc::clone(&self.inner), import_object)
+    pub fn instantiate(
+        &self,
+        import_object: &ImportObject,
+        package: Option<Pkg>,
+    ) -> error::Result<Instance> {
+        Instance::new(Arc::clone(&self.inner), import_object, package)
     }
 
     /// Create a cache artifact from this module.

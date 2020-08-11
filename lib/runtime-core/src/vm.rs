@@ -71,7 +71,7 @@ pub struct Ctx {
     pub data_finalizer: Option<fn(data: *mut c_void)>,
 
     /// The packaged computation.
-    pub package: Pkg,
+    pub package: Option<Pkg>,
 }
 
 /// When an instance context is destructed, we're calling its `data_finalizer`
@@ -273,6 +273,7 @@ fn get_interrupt_signal_mem() -> *mut u8 {
 impl Ctx {
     #[doc(hidden)]
     pub unsafe fn new(
+        package: Option<Pkg>,
         local_backing: &mut LocalBacking,
         import_backing: &mut ImportBacking,
         module: &ModuleInner,
@@ -319,12 +320,13 @@ impl Ctx {
 
             data: ptr::null_mut(),
             data_finalizer: None,
-            package: Pkg::new(),
+            package,
         }
     }
 
     #[doc(hidden)]
     pub unsafe fn new_with_data(
+        package: Option<Pkg>,
         local_backing: &mut LocalBacking,
         import_backing: &mut ImportBacking,
         module: &ModuleInner,
@@ -373,7 +375,7 @@ impl Ctx {
 
             data,
             data_finalizer: Some(data_finalizer),
-            package: Pkg::new(),
+            package,
         }
     }
 

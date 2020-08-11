@@ -10,6 +10,7 @@ use crate::{
     loader::Loader,
     memory::Memory,
     module::{ExportIndex, Module, ModuleInfo, ModuleInner},
+    pkg::Pkg,
     sig_registry::SigRegistry,
     structures::TypedIndex,
     table::Table,
@@ -58,7 +59,11 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub(crate) fn new(module: Arc<ModuleInner>, imports: &ImportObject) -> Result<Instance> {
+    pub(crate) fn new(
+        module: Arc<ModuleInner>,
+        imports: &ImportObject,
+        package: Option<Pkg>,
+    ) -> Result<Instance> {
         // We need the backing and import_backing to create a vm::Ctx, but we need
         // a vm::Ctx to create a backing and an import_backing. The solution is to create an
         // uninitialized vm::Ctx and then initialize it in-place.
@@ -81,9 +86,9 @@ impl Instance {
             let import_backing = &mut *(&mut inner.import_backing as *mut _);
             let real_ctx = match imports.call_state_creator() {
                 Some((data, dtor)) => {
-                    vm::Ctx::new_with_data(backing, import_backing, &module, data, dtor)
+                    vm::Ctx::new_with_data(package, backing, import_backing, &module, data, dtor)
                 }
-                None => vm::Ctx::new(backing, import_backing, &module),
+                None => vm::Ctx::new(package, backing, import_backing, &module),
             };
             vmctx.as_mut_ptr().write(real_ctx);
         };
