@@ -7,3 +7,4 @@
 install/
 api-docs/
 api-docs-repo/
+__pycache__/
