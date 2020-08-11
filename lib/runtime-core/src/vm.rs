@@ -10,6 +10,7 @@ use crate::{
     structures::TypedIndex,
     types::{LocalOrImport, MemoryIndex, TableIndex, Value},
     vmcalls,
+    pkg::Pkg,
 };
 use std::{
     cell::UnsafeCell,
@@ -68,6 +69,9 @@ pub struct Ctx {
     /// when the context is destructed, e.g. when an `Instance`
     /// is dropped.
     pub data_finalizer: Option<fn(data: *mut c_void)>,
+
+    /// The packaged computation.
+    pub package: Pkg,
 }
 
 /// When an instance context is destructed, we're calling its `data_finalizer`
@@ -315,6 +319,7 @@ impl Ctx {
 
             data: ptr::null_mut(),
             data_finalizer: None,
+            package: Pkg::new(),
         }
     }
 
@@ -368,6 +373,7 @@ impl Ctx {
 
             data,
             data_finalizer: Some(data_finalizer),
+            package: Pkg::new(),
         }
     }
 
