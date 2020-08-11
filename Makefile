@@ -180,7 +180,7 @@ lint:
 precommit: lint test
 
 debug:
-	cargo build --release --features backend-cranelift,backend-singlepass,debug,trace
+	cargo build --release --features backend-cranelift,backend-llvm,debug,trace
 
 install:
 	cargo install --path .
