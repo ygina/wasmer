@@ -414,7 +414,8 @@ fn execute_wasi(
         .wasm_binary(wasm_binary.to_vec())
         .args(args.clone())
         .envs(&env_vars)
-        .preopen_dirs(preopened_files.clone());
+        .preopen_dirs(preopened_files.clone())
+        .map_err(|e| format!("Failed to preopen directories: {:?}", e))?;
     let mut wasi_state_builder = wasmer_wasi::state::WasiState::new(&name);
     wasi_state_builder
         .args(args)

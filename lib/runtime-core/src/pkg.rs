@@ -1,5 +1,7 @@
 //! Package the binary and inputs into an independent executable unit.
-use std::path::PathBuf;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use tempdir::TempDir;
 
 /// The serialized struct along with the compressed filesystem that can
@@ -27,11 +29,36 @@ pub struct InternalPkg {
     pub envs: Vec<Vec<u8>>,
 }
 
+fn print_fs(path: &Path, level: usize) -> io::Result<()> {
+    let prefix = (0..level).map(|_| "--").collect::<String>();
+    let filename = path.file_name().unwrap().to_str().unwrap();
+    if path.is_dir() {
+        println!("{}{}/", prefix, filename);
+        for entry in fs::read_dir(path)? {
+            let path = entry?.path();
+            print_fs(&path, level + 1)?;
+        }
+    } else {
+        println!("{}{}", prefix, filename);
+    }
+    Ok(())
+}
+
 impl Drop for Pkg {
     fn drop(&mut self) {
         // Write the binary, the packaged root directory, and other
         // package configurations into a zipped directory.
-        println!("Writing package.")
+        println!("Writing package.");
+        println!("preopened: {:?}", self.internal.preopened);
+        println!("args: {:?}", self.internal.args);
+        println!("envs: {:?}", self.internal.envs);
+        println!("binary: {} bytes", self.wasm_binary.len());
+        match print_fs(self.root.path(), 0) {
+            Ok(()) => {},
+            Err(e) => {
+                println!("ERROR READING DIRECTORY: {:?}", e);
+            }
+        }
     }
 }
 
@@ -77,8 +104,11 @@ impl Pkg {
     }
 
     /// Set the preopened directories.
-    pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> Self {
+    pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> io::Result<Self> {
         self.internal.preopened = preopened;
-        self
+        for path in &self.internal.preopened {
+            fs::create_dir(self.root.path().join(path))?;
+        }
+        Ok(self)
     }
 }
