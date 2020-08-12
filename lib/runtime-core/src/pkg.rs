@@ -1,8 +1,10 @@
 //! Package the binary and inputs into an independent executable unit.
 use std::collections::HashSet;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+use bincode;
 use tempdir::TempDir;
 
 /// The serialized struct along with the compressed filesystem that can
@@ -21,7 +23,7 @@ pub struct Pkg {
 }
 
 /// Package configurations that are not related to files in the filesystem.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
 pub struct InternalPkg {
     /// Pre-opened directories
@@ -49,19 +51,14 @@ fn print_fs(path: &Path, level: usize) -> io::Result<()> {
 
 impl Drop for Pkg {
     fn drop(&mut self) {
-        // Write the binary, the packaged root directory, and other
-        // package configurations into a zipped directory.
-        println!("Writing package.");
-        println!("preopened: {:?}", self.internal.preopened);
-        println!("args: {:?}", self.internal.args);
-        println!("envs: {:?}", self.internal.envs);
-        println!("binary: {} bytes", self.wasm_binary.len());
-        match print_fs(self.root.path(), 0) {
+        match self.log_package() {
             Ok(()) => {},
-            Err(e) => {
-                println!("ERROR READING DIRECTORY: {:?}", e);
-            }
-        }
+            Err(e) => println!("ERROR LOGGING PACKAGE: {:?}", e),
+        };
+        match self.zip_package() {
+            Ok(()) => {},
+            Err(e) => println!("ERROR ZIPPING PACKAGE: {:?}", e),
+        };
     }
 }
 
@@ -94,6 +91,39 @@ impl Pkg {
     /// should not preserve anything in the archive.
     pub fn create_path(&mut self, path: &Path) {
         self.created.insert(path.to_path_buf());
+    }
+
+    /// Log package information.
+    pub fn log_package(&self) -> io::Result<()> {
+        println!("Writing package.");
+        println!("preopened: {:?}", self.internal.preopened);
+        println!("args: {:?}", self.internal.args);
+        println!("envs: {:?}", self.internal.envs);
+        println!("binary: {} bytes", self.wasm_binary.len());
+        print_fs(self.root.path(), 0)?;
+        Ok(())
+    }
+
+    /// Write the binary, the packaged root directory, and other package
+    /// configurations into a zipped directory.
+    ///
+    /// package
+    /// -- main.wasm
+    /// -- config  # serialized InternalPkg
+    /// -- root/
+    /// -- -- ...
+    pub fn zip_package(&self) -> io::Result<()> {
+        fs::create_dir("package")?;
+
+        // Wasm binary
+        let mut binary = fs::File::create("package/main.wasm")?;
+        binary.write_all(&self.wasm_binary)?;
+        // Config
+        let mut config = fs::File::create("package/config")?;
+        config.write_all(&bincode::serialize(&self.internal).unwrap())?;
+        // Root
+        fs::rename(self.root.path(), "package/root/")?;
+        Ok(())
     }
 }
 
