@@ -411,7 +411,7 @@ fn execute_wasi(
     let preopened_files = options.pre_opened_directories.clone();
 
     let package = wasmer_runtime_core::pkg::Pkg::new()
-        .wasm_binary(wasm_binary.to_vec())
+        .wasm_binary(std::path::Path::new(&name), wasm_binary.to_vec())
         .args(args.clone())
         .envs(&env_vars)
         .preopen_dirs(preopened_files.clone())
@@ -795,7 +795,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         let mut import_object = wasmer_runtime_core::import::ImportObject::new();
         import_object.allow_missing_functions = true; // Import initialization might be left to the loader.
         let package = wasmer_runtime_core::pkg::Pkg::new()
-            .wasm_binary(wasm_binary.to_vec());
+            .wasm_binary(wasm_path, wasm_binary.to_vec());
         let instance = module
             .instantiate(&import_object, Some(package))
             .map_err(|e| format!("Can't instantiate loader module: {:?}", e))?;
@@ -837,7 +837,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         let mut emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new(&module)?;
         let import_object = wasmer_emscripten::generate_emscripten_env(&mut emscripten_globals);
         let package = wasmer_runtime_core::pkg::Pkg::new()
-            .wasm_binary(wasm_binary.to_vec());
+            .wasm_binary(wasm_path, wasm_binary.to_vec());
         let mut instance = module
             .instantiate(&import_object, Some(package))
             .map_err(|e| format!("Can't instantiate emscripten module: {:?}", e))?;
@@ -877,7 +877,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         } else {
             let import_object = wasmer_runtime_core::import::ImportObject::new();
             let package = wasmer_runtime_core::pkg::Pkg::new()
-                .wasm_binary(wasm_binary.to_vec());
+                .wasm_binary(wasm_path, wasm_binary.to_vec());
             let instance = module
                 .instantiate(&import_object, Some(package))
                 .map_err(|e| format!("Can't instantiate module: {:?}", e))?;

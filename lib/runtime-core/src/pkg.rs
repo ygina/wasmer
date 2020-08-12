@@ -26,6 +26,8 @@ pub struct Pkg {
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
 pub struct InternalPkg {
+    /// Path to the binary
+    pub binary_path: Option<PathBuf>,
     /// Pre-opened directories
     pub preopened: Vec<PathBuf>,
     /// Arguments
@@ -113,16 +115,24 @@ impl Pkg {
     /// -- root/
     /// -- -- ...
     pub fn zip_package(&self) -> io::Result<()> {
-        fs::create_dir("package")?;
+        let dir = Path::new("package");
+        fs::create_dir(dir)?;
 
         // Wasm binary
-        let mut binary = fs::File::create("package/main.wasm")?;
+        let binary_path = self.root.path().join(self.internal.binary_path
+            .as_ref()
+            .expect("uninitialized binary path"));
+        match binary_path.parent() {
+            Some(parent) => fs::create_dir_all(parent)?,
+            None => {},
+        };
+        let mut binary = fs::File::create(binary_path)?;
         binary.write_all(&self.wasm_binary)?;
         // Config
-        let mut config = fs::File::create("package/config")?;
+        let mut config = fs::File::create(dir.join("config"))?;
         config.write_all(&bincode::serialize(&self.internal).unwrap())?;
         // Root
-        fs::rename(self.root.path(), "package/root/")?;
+        fs::rename(self.root.path(), dir.join("root/"))?;
         Ok(())
     }
 }
@@ -135,6 +145,7 @@ impl Pkg {
             created: HashSet::new(),
             wasm_binary: Vec::new(),
             internal: InternalPkg {
+                binary_path: None,
                 preopened: Vec::new(),
                 args: Vec::new(),
                 envs: Vec::new(),
@@ -143,7 +154,12 @@ impl Pkg {
     }
 
     /// Set the wasm binary.
-    pub fn wasm_binary(mut self, wasm_binary: Vec<u8>) -> Self {
+    pub fn wasm_binary(
+        mut self,
+        binary_path: &Path,
+        wasm_binary: Vec<u8>,
+    ) -> Self {
+        self.internal.binary_path = Some(binary_path.to_path_buf());
         self.wasm_binary = wasm_binary;
         self
     }
