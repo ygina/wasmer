@@ -2062,6 +2062,7 @@ pub fn path_rename(
     new_path_len: u32,
 ) -> __wasi_errno_t {
     warn!("wasi::path_rename");
+    let pkg = ctx.package.clone();
     let (memory, state) = get_memory_and_wasi_state(ctx, 0);
     let source_str = get_input_str!(memory, old_path, old_path_len);
     let source_path = std::path::Path::new(source_str);
@@ -2143,6 +2144,25 @@ pub fn path_rename(
             result.is_none(),
             "Fatal error: race condition on filesystem detected or internal logic error"
         );
+    }
+
+    {
+        let base_inode = state.fs.get_fd(old_fd).unwrap().inode;
+        let path = match &state.fs.inodes[base_inode].kind {
+            Kind::Dir { ref path, .. } => {
+                path.join(source_str)
+            },
+            kind => unimplemented!("unhandled inode fd={} {:?}", old_fd, kind),
+        };
+        pkg.borrow_mut().as_mut().map(|mut pkg| {
+            let added = pkg
+                .add_path(&path)
+                .map_err(|e| error!("Error updating package: {:?}", e))
+                .unwrap();
+            if added {
+                error!("PACKAGE");
+            }
+        });
     }
 
     __WASI_ESUCCESS
@@ -2247,6 +2267,7 @@ pub fn path_unlink_file(
     path_len: u32,
 ) -> __wasi_errno_t {
     warn!("wasi::path_unlink_file");
+    let pkg = ctx.package.clone();
     let (memory, state) = get_memory_and_wasi_state(ctx, 0);
 
     let base_dir = wasi_try!(state.fs.fd_map.get(&fd).ok_or(__WASI_EBADF));
@@ -2317,6 +2338,25 @@ pub fn path_unlink_file(
                 .orphan_fds
                 .insert(removed_inode, removed_inode_val.unwrap());
         }
+    }
+
+    {
+        let base_inode = state.fs.get_fd(fd).unwrap().inode;
+        let path = match &state.fs.inodes[base_inode].kind {
+            Kind::Dir { ref path, .. } => {
+                path.join(path_str)
+            },
+            kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
+        };
+        pkg.borrow_mut().as_mut().map(|mut pkg| {
+            let added = pkg
+                .add_path(&path)
+                .map_err(|e| error!("Error updating package: {:?}", e))
+                .unwrap();
+            if added {
+                error!("PACKAGE");
+            }
+        });
     }
 
     __WASI_ESUCCESS
