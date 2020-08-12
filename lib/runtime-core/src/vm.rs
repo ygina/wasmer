@@ -13,10 +13,11 @@ use crate::{
     pkg::Pkg,
 };
 use std::{
-    cell::UnsafeCell,
+    cell::{UnsafeCell, RefCell},
     ffi::c_void,
     mem,
     ptr::{self, NonNull},
+    rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
     sync::Once,
 };
@@ -71,7 +72,7 @@ pub struct Ctx {
     pub data_finalizer: Option<fn(data: *mut c_void)>,
 
     /// The packaged computation.
-    pub package: Option<Pkg>,
+    pub package: Rc<RefCell<Option<Pkg>>>,
 }
 
 /// When an instance context is destructed, we're calling its `data_finalizer`
@@ -320,7 +321,7 @@ impl Ctx {
 
             data: ptr::null_mut(),
             data_finalizer: None,
-            package,
+            package: Rc::new(RefCell::new(package)),
         }
     }
 
@@ -375,7 +376,7 @@ impl Ctx {
 
             data,
             data_finalizer: Some(data_finalizer),
-            package,
+            package: Rc::new(RefCell::new(package)),
         }
     }
 

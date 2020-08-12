@@ -21,7 +21,8 @@ use std::borrow::Borrow;
 use std::cell::Cell;
 use std::convert::{Infallible, TryInto};
 use std::io::{self, Read, Seek, Write};
-use wasmer_runtime_core::{memory::Memory, vm::Ctx};
+use std::path::Path;
+use wasmer_runtime_core::{memory::Memory, vm::Ctx, pkg::Pkg};
 
 #[cfg(any(target_os = "freebsd", target_os = "linux", target_os = "macos"))]
 pub use unix::*;
@@ -1420,6 +1421,7 @@ pub fn path_filestat_get(
     buf: WasmPtr<__wasi_filestat_t>,
 ) -> __wasi_errno_t {
     warn!("wasi::path_filestat_get");
+    let pkg = ctx.package.clone();
     let (memory, state) = get_memory_and_wasi_state(ctx, 0);
 
     let root_dir = wasi_try!(state.fs.get_fd(fd));
@@ -1436,6 +1438,20 @@ pub fn path_filestat_get(
         path_string,
         flags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0,
     ));
+    {
+        let base_inode = state.fs.get_fd(fd).unwrap().inode;
+        let path = match &state.fs.inodes[base_inode].kind {
+            Kind::Dir { ref path, .. } => {
+                path.join(path_string)
+            },
+            kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
+        };
+        pkg.borrow_mut().as_mut().map(|mut pkg| pkg
+            .add_path(&path)
+            .map_err(|e| error!("Error updating package: {:?}", e))
+            .unwrap()
+        );
+    }
     let stat = wasi_try!(state
         .fs
         .get_stat_for_kind(&state.fs.inodes[file_inode].kind)

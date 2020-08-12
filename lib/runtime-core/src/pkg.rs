@@ -63,6 +63,25 @@ impl Drop for Pkg {
 }
 
 impl Pkg {
+    /// Indicate this file was accessed and must be preserved in the archive.
+    /// The file is in its original state from before execution. It already
+    /// existed prior to execution and has not yet been modified.
+    pub fn add_path(&mut self, path: &Path) -> io::Result<()> {
+        let new_path = self.root.path().join(path);
+        if path.is_dir() {
+            fs::create_dir_all(new_path)?;
+        } else {
+            match new_path.parent() {
+                Some(parent) => fs::create_dir_all(parent)?,
+                None => {},
+            };
+            fs::copy(path, new_path)?;
+        }
+        Ok(())
+    }
+}
+
+impl Pkg {
     /// Instantiate a new package.
     pub fn new() -> Self {
         Pkg {
