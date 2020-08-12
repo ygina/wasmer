@@ -1,4 +1,5 @@
 //! Package the binary and inputs into an independent executable unit.
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,8 @@ use tempdir::TempDir;
 pub struct Pkg {
     /// Dummy value
     pub root: TempDir,
+    /// Created files
+    pub created: HashSet<PathBuf>,
     /// Binary bytes
     pub wasm_binary: Vec<u8>,
     /// Internal package configurations
@@ -66,18 +69,31 @@ impl Pkg {
     /// Indicate this file was accessed and must be preserved in the archive.
     /// The file is in its original state from before execution. It already
     /// existed prior to execution and has not yet been modified.
-    pub fn add_path(&mut self, path: &Path) -> io::Result<()> {
+    ///
+    /// Returns whether the path was newly added.
+    pub fn add_path(&mut self, path: &Path) -> io::Result<bool> {
         let new_path = self.root.path().join(path);
-        if path.is_dir() {
-            fs::create_dir_all(new_path)?;
+        if !new_path.exists() && !self.created.contains(path) {
+            // Copy the path to the new path if the new path doesn't exist
+            if path.is_dir() {
+                fs::create_dir_all(new_path)?;
+            } else {
+                match new_path.parent() {
+                    Some(parent) => fs::create_dir_all(parent)?,
+                    None => {},
+                };
+                fs::copy(path, new_path)?;
+            }
+            Ok(true)
         } else {
-            match new_path.parent() {
-                Some(parent) => fs::create_dir_all(parent)?,
-                None => {},
-            };
-            fs::copy(path, new_path)?;
+            Ok(false)
         }
-        Ok(())
+    }
+
+    /// Indicate this file was newly created and future accesses to this file
+    /// should not preserve anything in the archive.
+    pub fn create_path(&mut self, path: &Path) {
+        self.created.insert(path.to_path_buf());
     }
 }
 
@@ -86,6 +102,7 @@ impl Pkg {
     pub fn new() -> Self {
         Pkg {
             root: TempDir::new("wasmer").expect("failed to create tempdir"),
+            created: HashSet::new(),
             wasm_binary: Vec::new(),
             internal: InternalPkg {
                 preopened: Vec::new(),

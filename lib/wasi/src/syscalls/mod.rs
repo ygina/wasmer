@@ -1446,11 +1446,15 @@ pub fn path_filestat_get(
             },
             kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
         };
-        pkg.borrow_mut().as_mut().map(|mut pkg| pkg
-            .add_path(&path)
-            .map_err(|e| error!("Error updating package: {:?}", e))
-            .unwrap()
-        );
+        pkg.borrow_mut().as_mut().map(|mut pkg| {
+            let added = pkg
+                .add_path(&path)
+                .map_err(|e| error!("Error updating package: {:?}", e))
+                .unwrap();
+            if added {
+                error!("PACKAGE");
+            }
+        });
     }
     let stat = wasi_try!(state
         .fs
@@ -1673,6 +1677,7 @@ pub fn path_open(
     if dirflags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0 {
         warn!("  - will follow symlinks when opening path");
     }
+    let pkg = ctx.package.clone();
     let (memory, state) = get_memory_and_wasi_state(ctx, 0);
     /* TODO: find actual upper bound on name size (also this is a path, not a name :think-fish:) */
     if path_len > 1024 * 1024 {
@@ -1706,6 +1711,7 @@ pub fn path_open(
     );
 
     let mut open_flags = 0;
+    let mut new_file = false;
     // TODO: traverse rights of dirs properly
     // COMMENTED OUT: WASI isn't giving appropriate rights here when opening
     //              TODO: look into this; file a bug report if this is a bug
@@ -1798,6 +1804,7 @@ pub fn path_open(
                 return __WASI_ENOTDIR;
             }
             warn!("Creating file");
+            new_file = true;
             // strip end file name
 
             let (parent_inode, new_entity_name) = wasi_try!(state.fs.get_parent_inode_at_path(
@@ -1865,6 +1872,30 @@ pub fn path_open(
         "inode {:?} value {:#?} found!",
         inode, state.fs.inodes[inode]
     );
+
+
+    {
+        let base_inode = state.fs.get_fd(dirfd).unwrap().inode;
+        let path = match &state.fs.inodes[base_inode].kind {
+            Kind::Dir { ref path, .. } => {
+                path.join(path_string)
+            },
+            kind => unimplemented!("unhandled inode fd={} {:?}", dirfd, kind),
+        };
+        pkg.borrow_mut().as_mut().map(|mut pkg| {
+            if !new_file {
+                let added = pkg
+                    .add_path(&path)
+                    .map_err(|e| error!("Error updating package: {:?}", e))
+                    .unwrap();
+                if added {
+                    error!("PACKAGE");
+                }
+            } else {
+                pkg.create_path(&path);
+            }
+        });
+    }
 
     // TODO: check and reduce these
     // TODO: ensure a mutable fd to root can never be opened
