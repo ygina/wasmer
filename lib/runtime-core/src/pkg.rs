@@ -31,9 +31,9 @@ pub struct InternalPkg {
     /// Pre-opened directories
     pub preopened: Vec<PathBuf>,
     /// Arguments
-    pub args: Vec<Vec<u8>>,
+    pub args: Vec<String>,
     /// Environment variables
-    pub envs: Vec<Vec<u8>>,
+    pub envs: Vec<String>,
 }
 
 fn print_fs(path: &Path, level: usize) -> io::Result<()> {
@@ -165,7 +165,7 @@ impl Pkg {
     }
 
     /// Set the arguments.
-    pub fn args(mut self, args: Vec<Vec<u8>>) -> Self {
+    pub fn args(mut self, args: Vec<String>) -> Self {
         self.internal.args = args;
         self
     }
@@ -173,14 +173,8 @@ impl Pkg {
     /// Set the environment variables.
     pub fn envs(mut self, envs: &Vec<(&str, &str)>) -> Self {
         for (key, value) in envs {
-            let length = key.len() + value.len() + 1;
-            let mut byte_vec = Vec::with_capacity(length);
-
-            byte_vec.extend_from_slice(key.as_bytes());
-            byte_vec.push(b'=');
-            byte_vec.extend_from_slice(value.as_bytes());
-
-            self.internal.envs.push(byte_vec);
+            let env_var = format!("{}={}", key, value);
+            self.internal.envs.push(env_var);
         }
         self
     }

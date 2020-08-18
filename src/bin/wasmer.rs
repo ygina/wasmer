@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
 
+use bincode;
 use structopt::{clap, StructOpt};
 
 use wasmer::*;
@@ -45,6 +46,7 @@ use wasmer_runtime_core::{
 use wasmer_runtime_core::{
     fault::{pop_code_version, push_code_version},
     state::CodeVersion,
+    pkg::InternalPkg,
 };
 #[cfg(feature = "wasi")]
 use wasmer_wasi;
@@ -145,9 +147,17 @@ struct Run {
     #[structopt(long = "disable-cache")]
     disable_cache: bool,
 
+    /// Record the execution into a package
+    #[structopt(long = "record")]
+    record: bool,
+
     /// Input file
     #[structopt(parse(from_os_str))]
     path: PathBuf,
+
+    /// Whether to use input path for replay
+    #[structopt(long = "replay")]
+    replay: bool,
 
     /// Name of the backend to use (x86_64)
     #[cfg(target_arch = "x86_64")]
@@ -407,15 +417,19 @@ fn execute_wasi(
         options.path.to_str().unwrap().to_owned()
     };
 
-    let args: Vec<_> = options.args.iter().cloned().map(|arg| arg.into_bytes()).collect();
+    let args = options.args.iter().cloned().map(|arg| arg.into_bytes());
     let preopened_files = options.pre_opened_directories.clone();
 
-    let package = wasmer_runtime_core::pkg::Pkg::new()
+    let package = if options.record {
+        Some(wasmer_runtime_core::pkg::Pkg::new()
         .wasm_binary(std::path::Path::new(&name), wasm_binary.to_vec())
-        .args(args.clone())
+        .args(options.args.clone())
         .envs(&env_vars)
         .preopen_dirs(preopened_files.clone())
-        .map_err(|e| format!("Failed to preopen directories: {:?}", e))?;
+        .map_err(|e| format!("Failed to preopen directories: {:?}", e))?)
+    } else {
+        None
+    };
     let mut wasi_state_builder = wasmer_wasi::state::WasiState::new(&name);
     wasi_state_builder
         .args(args)
@@ -437,7 +451,7 @@ fn execute_wasi(
 
     #[allow(unused_mut)] // mut used in feature
     let mut instance = module
-        .instantiate(&import_object, Some(package))
+        .instantiate(&import_object, package)
         .map_err(|e| format!("Can't instantiate WASI module: {:?}", e))?;
 
     let start: wasmer_runtime::Func<(), ()> =
@@ -794,10 +808,14 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     if let Some(loader) = options.loader {
         let mut import_object = wasmer_runtime_core::import::ImportObject::new();
         import_object.allow_missing_functions = true; // Import initialization might be left to the loader.
-        let package = wasmer_runtime_core::pkg::Pkg::new()
-            .wasm_binary(wasm_path, wasm_binary.to_vec());
+        let package = if options.record {
+            Some(wasmer_runtime_core::pkg::Pkg::new()
+                .wasm_binary(wasm_path, wasm_binary.to_vec()))
+        } else {
+            None
+        };
         let instance = module
-            .instantiate(&import_object, Some(package))
+            .instantiate(&import_object, package)
             .map_err(|e| format!("Can't instantiate loader module: {:?}", e))?;
 
         let mut args: Vec<Value> = Vec::new();
@@ -836,10 +854,14 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     if wasmer_emscripten::is_emscripten_module(&module) {
         let mut emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new(&module)?;
         let import_object = wasmer_emscripten::generate_emscripten_env(&mut emscripten_globals);
-        let package = wasmer_runtime_core::pkg::Pkg::new()
-            .wasm_binary(wasm_path, wasm_binary.to_vec());
+        let package = if options.record {
+            Some(wasmer_runtime_core::pkg::Pkg::new()
+                .wasm_binary(wasm_path, wasm_binary.to_vec()))
+        } else {
+            None
+        };
         let mut instance = module
-            .instantiate(&import_object, Some(package))
+            .instantiate(&import_object, package)
             .map_err(|e| format!("Can't instantiate emscripten module: {:?}", e))?;
 
         wasmer_emscripten::run_emscripten_instance(
@@ -876,10 +898,14 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
             )?;
         } else {
             let import_object = wasmer_runtime_core::import::ImportObject::new();
-            let package = wasmer_runtime_core::pkg::Pkg::new()
-                .wasm_binary(wasm_path, wasm_binary.to_vec());
+            let package = if options.record {
+                Some(wasmer_runtime_core::pkg::Pkg::new()
+                    .wasm_binary(wasm_path, wasm_binary.to_vec()))
+            } else {
+                None
+            };
             let instance = module
-                .instantiate(&import_object, Some(package))
+                .instantiate(&import_object, package)
                 .map_err(|e| format!("Can't instantiate module: {:?}", e))?;
 
             let invoke_fn = match options.invoke.as_ref() {
@@ -1031,6 +1057,11 @@ fn get_backend(backend: Backend, path: &PathBuf) -> Backend {
 }
 
 fn run(options: &mut Run) {
+    if options.replay {
+        replay(options);
+        return;
+    }
+
     options.backend = get_backend(options.backend, &options.path);
     #[cfg(any(feature = "debug", feature = "trace"))]
     {
@@ -1084,6 +1115,35 @@ fn validate(validate: Validate) {
         }
         _ => (),
     }
+}
+
+/// Runs logic for the `replay` subcommand
+fn replay(options: &mut Run) {
+    let base_path = &options.path;
+
+    // Read the config file.
+    let config_path = base_path.join("config");
+    let mut config_file = File::open(&config_path).expect(
+        &format!("malformed package: no config file at {:?}", config_path));
+    let mut buffer = vec![];
+    config_file.read_to_end(&mut buffer).expect("error reading config");
+    let config: InternalPkg =
+        bincode::deserialize(&buffer).expect("malformed config file");
+
+    // Set working directory to root.
+    let root = base_path.join("root");
+    std::env::set_current_dir(&root).expect(
+        &format!("malformed package: no root directory at {:?}", root));
+
+    // Edit options based on the config.
+    options.replay = false;
+    options.path = config.binary_path.expect("expected binary path");
+    options.pre_opened_directories = config.preopened;
+    options.args = config.args;
+    options.env_vars = config.envs;
+
+    // Run with new config.
+    run(options)
 }
 
 fn get_compiler_by_backend(backend: Backend, _opts: &Run) -> Option<Box<dyn Compiler>> {

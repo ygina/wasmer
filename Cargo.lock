@@ -1795,6 +1795,7 @@ name = "wasmer"
 version = "0.13.1"
 dependencies = [
  "atty",
+ "bincode",
  "byteorder",
  "errno",
  "fern",
