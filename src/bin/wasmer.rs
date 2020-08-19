@@ -11,9 +11,8 @@ extern crate structopt;
 #[macro_use]
 extern crate log;
 
-use std::collections::HashMap;
 use std::env;
-use std::fs::{read_to_string, File};
+use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::path::PathBuf;
@@ -182,14 +181,6 @@ struct Run {
     /// Invoke a specified function
     #[structopt(long = "invoke", short = "i")]
     invoke: Option<String>,
-
-    /// Emscripten symbol map
-    #[structopt(long = "em-symbol-map", parse(from_os_str), group = "emscripten")]
-    em_symbol_map: Option<PathBuf>,
-
-    /// Begin execution at the specified symbol
-    #[structopt(long = "em-entrypoint", group = "emscripten")]
-    em_entrypoint: Option<String>,
 
     /// WASI pre-opened directory
     #[structopt(long = "dir", multiple = true, group = "wasi")]
@@ -594,50 +585,6 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         )
     })?;
 
-    let em_symbol_map = if let Some(em_symbol_map_path) = options.em_symbol_map.clone() {
-        let em_symbol_map_content: String = read_to_string(&em_symbol_map_path)
-            .map_err(|err| {
-                format!(
-                    "Can't read symbol map file {}: {}",
-                    em_symbol_map_path.as_os_str().to_string_lossy(),
-                    err,
-                )
-            })?
-            .to_owned();
-        let mut em_symbol_map = HashMap::new();
-        for line in em_symbol_map_content.lines() {
-            let mut split = line.split(':');
-            let num_str = if let Some(ns) = split.next() {
-                ns
-            } else {
-                return Err(
-                    "Can't parse symbol map (expected each entry to be of the form: `0:func_name`)"
-                        .to_string(),
-                );
-            };
-            let num: u32 = num_str.parse::<u32>().map_err(|err| {
-                format!(
-                    "Failed to parse {} as a number in symbol map: {}",
-                    num_str, err
-                )
-            })?;
-            let name_str: String = if let Some(name_str) = split.next() {
-                name_str
-            } else {
-                return Err(
-                    "Can't parse symbol map (expected each entry to be of the form: `0:func_name`)"
-                        .to_string(),
-                );
-            }
-            .to_owned();
-
-            em_symbol_map.insert(num, name_str);
-        }
-        Some(em_symbol_map)
-    } else {
-        None
-    };
-
     // Don't error on --enable-all for other backends.
     if options.features.simd {
         #[cfg(feature = "backend-llvm")]
@@ -715,7 +662,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         webassembly::compile_with_config_with(
             &wasm_binary[..],
             CompilerConfig {
-                symbol_map: em_symbol_map.clone(),
+                symbol_map: None,
                 memory_bound_check_mode: MemoryBoundCheckMode::Disable,
                 enforce_stack_check: true,
 
@@ -734,7 +681,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         webassembly::compile_with_config_with(
             &wasm_binary[..],
             CompilerConfig {
-                symbol_map: em_symbol_map.clone(),
+                symbol_map: None,
                 track_state,
 
                 // Enable full preemption if state tracking is enabled.
@@ -785,7 +732,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
                     let module = webassembly::compile_with_config_with(
                         &wasm_binary[..],
                         CompilerConfig {
-                            symbol_map: em_symbol_map.clone(),
+                            symbol_map: None,
                             track_state,
                             features: options.features.into_backend_features(),
                             backend_specific_config,
@@ -851,98 +798,69 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     }
 
     // TODO: refactor this
-    if wasmer_emscripten::is_emscripten_module(&module) {
-        let mut emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new(&module)?;
-        let import_object = wasmer_emscripten::generate_emscripten_env(&mut emscripten_globals);
+    #[cfg(feature = "wasi")]
+    let wasi_version = wasmer_wasi::get_wasi_version(&module, true);
+    #[cfg(feature = "wasi")]
+    let is_wasi = wasi_version.is_some();
+    #[cfg(not(feature = "wasi"))]
+    let is_wasi = false;
+
+    if is_wasi {
+        #[cfg(feature = "wasi")]
+        execute_wasi(
+            wasi_version.unwrap(),
+            options,
+            env_vars,
+            module,
+            mapped_dirs,
+            &wasm_binary,
+        )?;
+    } else {
+        let import_object = wasmer_runtime_core::import::ImportObject::new();
         let package = if options.record {
             Some(wasmer_runtime_core::pkg::Pkg::new()
                 .wasm_binary(wasm_path, wasm_binary.to_vec()))
         } else {
             None
         };
-        let mut instance = module
+        let instance = module
             .instantiate(&import_object, package)
-            .map_err(|e| format!("Can't instantiate emscripten module: {:?}", e))?;
+            .map_err(|e| format!("Can't instantiate module: {:?}", e))?;
 
-        wasmer_emscripten::run_emscripten_instance(
-            &module,
-            &mut instance,
-            &mut emscripten_globals,
-            if let Some(cn) = &options.command_name {
-                cn
+        let invoke_fn = match options.invoke.as_ref() {
+            Some(fun) => fun,
+            _ => "main",
+        };
+        let args = options.parse_args(&module, invoke_fn)?;
+
+        #[cfg(unix)]
+        let cv_pushed =
+            if let Some(msm) = instance.module.runnable_module.get_module_state_map() {
+                push_code_version(CodeVersion {
+                    baseline: true,
+                    msm: msm,
+                    base: instance.module.runnable_module.get_code().unwrap().as_ptr() as usize,
+                    backend: options.backend.to_string(),
+                    runnable_module: instance.module.runnable_module.clone(),
+                });
+                true
             } else {
-                options.path.to_str().unwrap()
-            },
-            options.args.iter().map(|arg| arg.as_str()).collect(),
-            options.em_entrypoint.clone(),
-            mapped_dirs,
-        )
-        .map_err(|e| format!("{:?}", e))?;
-    } else {
-        #[cfg(feature = "wasi")]
-        let wasi_version = wasmer_wasi::get_wasi_version(&module, true);
-        #[cfg(feature = "wasi")]
-        let is_wasi = wasi_version.is_some();
-        #[cfg(not(feature = "wasi"))]
-        let is_wasi = false;
-
-        if is_wasi {
-            #[cfg(feature = "wasi")]
-            execute_wasi(
-                wasi_version.unwrap(),
-                options,
-                env_vars,
-                module,
-                mapped_dirs,
-                &wasm_binary,
-            )?;
-        } else {
-            let import_object = wasmer_runtime_core::import::ImportObject::new();
-            let package = if options.record {
-                Some(wasmer_runtime_core::pkg::Pkg::new()
-                    .wasm_binary(wasm_path, wasm_binary.to_vec()))
-            } else {
-                None
+                false
             };
-            let instance = module
-                .instantiate(&import_object, package)
-                .map_err(|e| format!("Can't instantiate module: {:?}", e))?;
 
-            let invoke_fn = match options.invoke.as_ref() {
-                Some(fun) => fun,
-                _ => "main",
-            };
-            let args = options.parse_args(&module, invoke_fn)?;
+        let result = instance
+            .dyn_func(&invoke_fn)
+            .map_err(|e| format!("{:?}", e))?
+            .call(&args)
+            .map_err(|e| format!("{:?}", e))?;
 
-            #[cfg(unix)]
-            let cv_pushed =
-                if let Some(msm) = instance.module.runnable_module.get_module_state_map() {
-                    push_code_version(CodeVersion {
-                        baseline: true,
-                        msm: msm,
-                        base: instance.module.runnable_module.get_code().unwrap().as_ptr() as usize,
-                        backend: options.backend.to_string(),
-                        runnable_module: instance.module.runnable_module.clone(),
-                    });
-                    true
-                } else {
-                    false
-                };
-
-            let result = instance
-                .dyn_func(&invoke_fn)
-                .map_err(|e| format!("{:?}", e))?
-                .call(&args)
-                .map_err(|e| format!("{:?}", e))?;
-
-            #[cfg(unix)]
-            {
-                if cv_pushed {
-                    pop_code_version().unwrap();
-                }
+        #[cfg(unix)]
+        {
+            if cv_pushed {
+                pop_code_version().unwrap();
             }
-            println!("{}({:?}) returned {:?}", invoke_fn, args, result);
         }
+        println!("{}({:?}) returned {:?}", invoke_fn, args, result);
     }
 
     Ok(())
