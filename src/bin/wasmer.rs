@@ -139,7 +139,7 @@ pub struct LLVMCLIOptions {
 }
 
 #[derive(Debug, StructOpt, Clone)]
-struct Run {
+pub struct Run {
     /// Disable the cache
     #[structopt(long = "disable-cache")]
     disable_cache: bool,
@@ -248,6 +248,49 @@ struct Run {
     /// Application arguments
     #[structopt(name = "--", multiple = true)]
     args: Vec<String>,
+}
+
+impl Run {
+    pub fn new(path: PathBuf) -> Run {
+        Run {
+            path,
+            disable_cache: false,
+            record: false,
+            replay: false,
+            #[cfg(target_arch = "x86_64")]
+            backend: Backend::Auto,
+            #[cfg(target_arch = "aarch64")]
+            backend: Backend::Auto,
+            invoke: None,
+            pre_opened_directories: Vec::new(),
+            env_vars: Vec::new(),
+            #[cfg(feature = "managed")]
+            resume: None,
+            #[cfg(feature = "managed")]
+            optimized_backends: Vec::new(),
+            track_state: false,
+            call_trace: false,
+            block_trace: false,
+            command_name: None,
+            cache_key: None,
+            #[cfg(feature = "backend-llvm")]
+            backend_llvm_options: LLVMCLIOptions {
+                pre_opt_ir: None,
+                post_opt_ir: None,
+                obj_file: None,
+            },
+            features: PrestandardFeatures {
+                simd: false,
+                threads: false,
+                all: false,
+            },
+            #[cfg(feature = "experimental-io-devices")]
+            enable_experimental_io_devices: false,
+            #[cfg(feature = "debug")]
+            debug: false,
+            args: Vec::new(),
+        }
+    }
 }
 
 impl Run {
@@ -825,7 +868,7 @@ fn get_backend(backend: Backend, path: &PathBuf) -> Backend {
     }
 }
 
-fn run(options: &mut Run) {
+pub fn run(options: &mut Run) {
     if options.replay {
         replay(options);
         return;
