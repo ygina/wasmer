@@ -184,10 +184,6 @@ struct Run {
     #[structopt(long = "dir", multiple = true, group = "wasi")]
     pre_opened_directories: Vec<PathBuf>,
 
-    /// Map a host directory to a different location for the wasm module
-    #[structopt(long = "mapdir", multiple = true)]
-    mapped_dirs: Vec<String>,
-
     /// Pass custom environment variables
     #[structopt(long = "env", multiple = true)]
     env_vars: Vec<String>,
@@ -310,32 +306,6 @@ fn get_cache_dir() -> PathBuf {
     }
 }
 
-fn get_mapped_dirs(input: &[String]) -> Result<Vec<(String, PathBuf)>, String> {
-    let mut md = vec![];
-    for entry in input.iter() {
-        if let [alias, real_dir] = entry.split(':').collect::<Vec<&str>>()[..] {
-            let pb = PathBuf::from(&real_dir);
-            if let Ok(pb_metadata) = pb.metadata() {
-                if !pb_metadata.is_dir() {
-                    return Err(format!(
-                        "\"{}\" exists, but it is not a directory",
-                        &real_dir
-                    ));
-                }
-            } else {
-                return Err(format!("Directory \"{}\" does not exist", &real_dir));
-            }
-            md.push((alias.to_string(), pb));
-            continue;
-        }
-        return Err(format!(
-            "Directory mappings must consist of two paths separate by a colon. Found {}",
-            &entry
-        ));
-    }
-    Ok(md)
-}
-
 #[cfg(feature = "wasi")]
 fn get_env_var_args(input: &[String]) -> Result<Vec<(&str, &str)>, String> {
     let mut ev = vec![];
@@ -359,7 +329,6 @@ fn execute_wasi(
     options: &Run,
     env_vars: Vec<(&str, &str)>,
     module: wasmer_runtime_core::Module,
-    mapped_dirs: Vec<(String, PathBuf)>,
     wasm_binary: &[u8],
 ) -> Result<(), String> {
     let name = if let Some(cn) = &options.command_name {
@@ -386,9 +355,7 @@ fn execute_wasi(
         .args(args)
         .envs(env_vars)
         .preopen_dirs(preopened_files)
-        .map_err(|e| format!("Failed to preopen directories: {:?}", e))?
-        .map_dirs(mapped_dirs)
-        .map_err(|e| format!("Failed to preopen mapped directories: {:?}", e))?;
+        .map_err(|e| format!("Failed to preopen directories: {:?}", e))?;
 
     #[cfg(feature = "experimental-io-devices")]
     {
@@ -531,7 +498,6 @@ impl LLVMCallbacks for LLVMCLIOptions {
 fn execute_wasm(options: &Run) -> Result<(), String> {
     let disable_cache = options.disable_cache;
 
-    let mapped_dirs = get_mapped_dirs(&options.mapped_dirs[..])?;
     #[cfg(feature = "wasi")]
     let env_vars = get_env_var_args(&options.env_vars[..])?;
     let wasm_path = &options.path;
@@ -698,7 +664,6 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
             options,
             env_vars,
             module,
-            mapped_dirs,
             &wasm_binary,
         )?;
     } else {
