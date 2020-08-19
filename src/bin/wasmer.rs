@@ -17,7 +17,6 @@ use std::io;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::exit;
-use std::str::FromStr;
 
 use bincode;
 use structopt::{clap, StructOpt};
@@ -37,8 +36,7 @@ use wasmer_runtime::{
 use wasmer_runtime_core::tiering::{run_tiering, InteractiveShellContext, ShellExitOperation};
 use wasmer_runtime_core::{
     self,
-    backend::{Compiler, CompilerConfig, Features, MemoryBoundCheckMode},
-    loader::{Instance as LoadedInstance, LocalLoader},
+    backend::{Compiler, CompilerConfig, Features},
     Module,
 };
 #[cfg(unix)]
@@ -194,14 +192,6 @@ struct Run {
     #[structopt(long = "env", multiple = true)]
     env_vars: Vec<String>,
 
-    /// Custom code loader
-    #[structopt(
-        long = "loader",
-        case_insensitive = true,
-        possible_values = LoaderName::variants(),
-    )]
-    loader: Option<LoaderName>,
-
     /// Path to previously saved instance image to resume.
     #[cfg(feature = "managed")]
     #[structopt(long = "resume")]
@@ -269,36 +259,6 @@ impl Run {
     fn parse_args(&self, module: &Module, fn_name: &str) -> Result<Vec<Value>, String> {
         utils::parse_args(module, fn_name, &self.args)
             .map_err(|e| format!("Invoke failed: {:?}", e))
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
-enum LoaderName {
-    Local,
-    #[cfg(feature = "loader-kernel")]
-    Kernel,
-}
-
-impl LoaderName {
-    pub fn variants() -> &'static [&'static str] {
-        &[
-            "local",
-            #[cfg(feature = "loader-kernel")]
-            "kernel",
-        ]
-    }
-}
-
-impl FromStr for LoaderName {
-    type Err = String;
-    fn from_str(s: &str) -> Result<LoaderName, String> {
-        match s.to_lowercase().as_str() {
-            "local" => Ok(LoaderName::Local),
-            #[cfg(feature = "loader-kernel")]
-            "kernel" => Ok(LoaderName::Kernel),
-            _ => Err(format!("The loader {} doesn't exist", s)),
-        }
     }
 }
 
@@ -648,36 +608,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
 
     let track_state = options.track_state;
 
-    #[cfg(feature = "loader-kernel")]
-    let is_kernel_loader = if let Some(LoaderName::Kernel) = options.loader {
-        true
-    } else {
-        false
-    };
-
-    #[cfg(not(feature = "loader-kernel"))]
-    let is_kernel_loader = false;
-
-    let module = if is_kernel_loader {
-        webassembly::compile_with_config_with(
-            &wasm_binary[..],
-            CompilerConfig {
-                symbol_map: None,
-                memory_bound_check_mode: MemoryBoundCheckMode::Disable,
-                enforce_stack_check: true,
-
-                // Kernel loader does not support explicit preemption checkpoints.
-                full_preemption: false,
-
-                track_state,
-                features: options.features.into_backend_features(),
-                backend_specific_config,
-                ..Default::default()
-            },
-            &*compiler,
-        )
-        .map_err(|e| format!("Can't compile module: {:?}", e))?
-    } else if disable_cache {
+    let module = if disable_cache {
         webassembly::compile_with_config_with(
             &wasm_binary[..],
             CompilerConfig {
@@ -751,51 +682,6 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
 
         load_cache_key()?
     };
-
-    if let Some(loader) = options.loader {
-        let mut import_object = wasmer_runtime_core::import::ImportObject::new();
-        import_object.allow_missing_functions = true; // Import initialization might be left to the loader.
-        let package = if options.record {
-            Some(wasmer_runtime_core::pkg::Pkg::new()
-                .wasm_binary(wasm_path, wasm_binary.to_vec()))
-        } else {
-            None
-        };
-        let instance = module
-            .instantiate(&import_object, package)
-            .map_err(|e| format!("Can't instantiate loader module: {:?}", e))?;
-
-        let mut args: Vec<Value> = Vec::new();
-        for arg in options.args.iter() {
-            let x = arg.as_str().parse().map_err(|_| {
-                format!(
-                    "Can't parse the provided argument {:?} as a integer",
-                    arg.as_str()
-                )
-            })?;
-            args.push(Value::I32(x));
-        }
-
-        let index = instance.resolve_func("_start").map_err(|_| {
-            format!("The loader requires a _start function to be present in the module")
-        })?;
-
-        let mut ins: Box<dyn LoadedInstance<Error = String>> = match loader {
-            LoaderName::Local => Box::new(
-                instance
-                    .load(LocalLoader)
-                    .map_err(|e| format!("Can't use the local loader: {:?}", e))?,
-            ),
-            #[cfg(feature = "loader-kernel")]
-            LoaderName::Kernel => Box::new(
-                instance
-                    .load(::wasmer_kernel_loader::KernelLoader)
-                    .map_err(|e| format!("Can't use the kernel loader: {:?}", e))?,
-            ),
-        };
-        println!("{:?}", ins.call(index, &args));
-        return Ok(());
-    }
 
     // TODO: refactor this
     #[cfg(feature = "wasi")]
