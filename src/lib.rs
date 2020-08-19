@@ -20,3 +20,4 @@ pub mod update;
 pub mod logging;
 pub mod utils;
 pub mod webassembly;
+pub mod executor;
