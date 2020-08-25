@@ -861,11 +861,17 @@ pub fn generate_emscripten_env(globals: &mut EmscriptenGlobals) -> ImportObject 
         "_llvm_log2_f32" => func!(crate::math::_llvm_log2_f64),
         "_llvm_sin_f64" => func!(crate::math::_llvm_sin_f64),
         "_llvm_cos_f64" => func!(crate::math::_llvm_cos_f64),
-        "_llvm_exp2_f32" => func!(crate::math::_llvm_exp2_f32),
         "_llvm_exp2_f64" => func!(crate::math::_llvm_exp2_f64),
         "_llvm_trunc_f64" => func!(crate::math::_llvm_trunc_f64),
         "_llvm_fma_f64" => func!(crate::math::_llvm_fma_f64),
         "_emscripten_random" => func!(crate::math::_emscripten_random),
+
+        // ffmpeg.wasm
+        "_fabs" => func!(crate::math::fabs),
+        "_llvm_exp2_f32" => func!(crate::math::_llvm_exp2_f64),
+        "_llvm_trunc_f32" => func!(crate::math::_llvm_trunc_f64),
+        "_pthread_cancel" => func!(crate::pthread::_pthread_cancel),
+        "___wasi_fd_write" => func!(wasmer_wasi::syscalls::fd_write_ffmpeg),
 
         // Jump
         "__setjmp" => func!(crate::jmp::__setjmp),

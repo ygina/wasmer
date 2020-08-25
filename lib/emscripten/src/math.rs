@@ -52,6 +52,11 @@ pub fn _llvm_exp2_f64(_ctx: &mut Ctx, value: f64) -> f64 {
     2f64.powf(value)
 }
 
+pub fn _llvm_trunc_f32(_ctx: &mut Ctx, value: f32) -> f32 {
+    debug!("emscripten::_llvm_trunc_f32");
+    value.trunc()
+}
+
 pub fn _llvm_trunc_f64(_ctx: &mut Ctx, value: f64) -> f64 {
     debug!("emscripten::_llvm_trunc_f64");
     value.trunc()

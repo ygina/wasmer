@@ -16,6 +16,7 @@ libc = "0.2.60"
 log = "0.4"
 time = "0.1"
 wasmer-runtime-core = { path = "../runtime-core", version = "0.13.1" }
+wasmer-wasi = { path = "../wasi" }
 
 [target.'cfg(windows)'.dependencies]
 getrandom = "0.1"

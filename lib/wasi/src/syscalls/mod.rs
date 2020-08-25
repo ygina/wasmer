@@ -1296,6 +1296,56 @@ pub fn fd_write(
     __WASI_ESUCCESS
 }
 
+/// ### `fd_write()`
+/// Write data to the file descriptor
+/// Inputs:
+/// - `__wasi_fd_t`
+///     File descriptor (opened with writing) to write to
+/// - `const __wasi_ciovec_t *iovs`
+///     List of vectors to read data from
+/// - `u32 iovs_len`
+///     Length of data in `iovs`
+/// Output:
+/// - `u32 *nwritten`
+///     Number of bytes written
+/// Errors:
+///
+pub fn fd_write_ffmpeg(
+    ctx: &mut Ctx,
+    fd: __wasi_fd_t,
+    iovs: WasmPtr<__wasi_ciovec_t, Array>,
+    iovs_len: u32,
+    nwritten: WasmPtr<u32>,
+) -> __wasi_errno_t {
+    // If we are writing to stdout or stderr
+    // we skip debug to not pollute the stdout/err
+    // and do debugging happily after :)
+    warn!("wasi::fd_write: fd={}", fd);
+    // if fd != __WASI_STDOUT_FILENO && fd != __WASI_STDERR_FILENO {
+    //     warn!("wasi::fd_write: fd={}", fd);
+    // } else {
+    //     trace!("wasi::fd_write: fd={}", fd);
+    // }
+    let (memory, state) = get_memory_and_wasi_state(ctx, 0);
+    let iovs_arr_cell = wasi_try!(iovs.deref(memory, 0, iovs_len));
+    let nwritten_cell = wasi_try!(nwritten.deref(memory));
+
+    let bytes_written = match fd {
+        __WASI_STDIN_FILENO => return __WASI_EINVAL,
+        __WASI_STDOUT_FILENO => {
+            wasi_try!(write_bytes(io::stdout(), memory, iovs_arr_cell))
+        }
+        __WASI_STDERR_FILENO => {
+            wasi_try!(write_bytes(io::stderr(), memory, iovs_arr_cell))
+        }
+        _ => unimplemented!("cannot write to other files in ffmpeg"),
+    };
+
+    nwritten_cell.set(bytes_written);
+
+    __WASI_ESUCCESS
+}
+
 /// ### `path_create_directory()`
 /// Create directory at a path
 /// Inputs:

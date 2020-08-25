@@ -1890,6 +1890,7 @@ dependencies = [
  "log",
  "time",
  "wasmer-runtime-core",
+ "wasmer-wasi",
 ]
 
 [[package]]

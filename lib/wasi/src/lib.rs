@@ -30,7 +30,7 @@ extern crate log;
 mod macros;
 mod ptr;
 pub mod state;
-mod syscalls;
+pub mod syscalls;
 mod utils;
 
 use self::state::{WasiFs, WasiState};
