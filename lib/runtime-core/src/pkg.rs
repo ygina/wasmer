@@ -12,7 +12,7 @@ use tempdir::TempDir;
 #[derive(Debug)]
 #[repr(C)]
 pub struct Pkg {
-    /// Dummy value
+    /// Input files required to replicate the computation
     pub root: TempDir,
     /// Created files
     pub created: HashSet<PathBuf>,
@@ -20,6 +20,20 @@ pub struct Pkg {
     pub wasm_binary: Vec<u8>,
     /// Internal package configurations
     pub internal: InternalPkg,
+    /// Package result
+    result: PkgResult,
+}
+
+/// Package result.
+#[derive(Debug)]
+#[repr(C)]
+pub struct PkgResult {
+    /// Stdout
+    pub stdout: Vec<u8>,
+    /// Stderr
+    pub stderr: Vec<u8>,
+    /// Output filesystem
+    pub root: TempDir,
 }
 
 /// Package configurations that are not related to files in the filesystem.
@@ -103,6 +117,7 @@ impl Pkg {
         println!("envs: {:?}", self.internal.envs);
         println!("binary: {} bytes", self.wasm_binary.len());
         print_fs(self.root.path(), 0)?;
+        println!("result: {:?}", self.result);
         Ok(())
     }
 
@@ -149,6 +164,11 @@ impl Pkg {
                 preopened: Vec::new(),
                 args: Vec::new(),
                 envs: Vec::new(),
+            },
+            result: PkgResult {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                root: TempDir::new("wasmer").expect("failed to create tempdir"),
             },
         }
     }
