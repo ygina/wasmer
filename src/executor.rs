@@ -34,13 +34,12 @@ use wasmer_runtime_core::tiering::{run_tiering, InteractiveShellContext, ShellEx
 use wasmer_runtime_core::{
     self,
     backend::{Compiler, CompilerConfig, Features},
-    Module,
+    Module, pkg::InternalPkg,
 };
 #[cfg(unix)]
 use wasmer_runtime_core::{
     fault::{pop_code_version, push_code_version},
     state::CodeVersion,
-    pkg::InternalPkg,
 };
 #[cfg(feature = "wasi")]
 use wasmer_wasi;
