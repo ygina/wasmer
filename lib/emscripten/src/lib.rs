@@ -87,7 +87,7 @@ const STATIC_BUMP: u32 = 215_536;
 
 lazy_static! {
     static ref OLD_ABORT_ON_CANNOT_GROW_MEMORY_SIG: FuncSig =
-        { FuncSig::new(vec![], vec![Type::I32]) };
+        FuncSig::new(vec![], vec![Type::I32]);
 }
 
 // The address globals begin at. Very low in memory, for code size and optimization opportunities.
