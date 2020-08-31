@@ -327,15 +327,16 @@ fn execute_wasi(
     let args = options.args.iter().cloned().map(|arg| arg.into_bytes());
     let preopened_files = options.pre_opened_directories.clone();
 
-    let package = if options.record {
+    // let package = if options.record {
+    let package = {
         Some(wasmer_runtime_core::pkg::Pkg::new()
         .wasm_binary(std::path::Path::new(&name), wasm_binary.to_vec())
         .args(options.args.clone())
         .envs(&env_vars)
         .preopen_dirs(preopened_files.clone())
         .map_err(|e| format!("Failed to preopen directories: {:?}", e))?)
-    } else {
-        None
+    // } else {
+    //     None
     };
     let mut wasi_state_builder = wasmer_wasi::state::WasiState::new(&name);
     wasi_state_builder
