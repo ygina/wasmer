@@ -156,7 +156,12 @@ impl Pkg {
     /// WASI implementation. That is, the old path should already exist.
     pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) {
         debug!("rename {:?} {:?}", old_path, new_path);
-        unimplemented!("rename {:?} => {:?}", old_path, new_path)
+        fs::rename(
+            self.result().root.path().join(old_path),
+            self.result().root.path().join(new_path),
+        ).expect("unvalidated WASI");
+        self.created.insert(new_path.to_path_buf());
+        self.touch_path(old_path);
     }
 
     /// Delete a path.

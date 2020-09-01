@@ -2202,14 +2202,19 @@ pub fn path_rename(
     }
 
     {
-        let base_inode = state.fs.get_fd(old_fd).unwrap().inode;
-        let path = match &state.fs.inodes[base_inode].kind {
-            Kind::Dir { ref path, .. } => {
-                path.join(source_str)
-            },
-            kind => unimplemented!("unhandled inode fd={} {:?}", old_fd, kind),
+        let old_inode = state.fs.get_fd(old_fd).unwrap().inode;
+        let old_path = match &state.fs.inodes[old_inode].kind {
+            Kind::Dir { ref path, .. } => path.join(source_str),
+            kind => unimplemented!("unhandled inode fd={}", old_fd),
         };
-        pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
+        let new_inode = state.fs.get_fd(new_fd).unwrap().inode;
+        let new_path = match &state.fs.inodes[new_inode].kind {
+            Kind::Dir { ref path, .. } => path.join(target_str),
+            kind => unimplemented!("unhandled inode fd={}", new_fd),
+        };
+        pkg.borrow_mut().as_mut().map(|mut pkg| {
+            pkg.rename_path(&old_path, &new_path);
+        });
     }
 
     __WASI_ESUCCESS
