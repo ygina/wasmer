@@ -170,7 +170,9 @@ impl Pkg {
     /// WASI implementation. That is, the path should already exist.
     pub fn delete_path(&mut self, path: &Path) {
         debug!("delete {:?}", path);
-        unimplemented!("delete {:?}", path)
+        fs::remove_file(self.result().root.path().join(path))
+            .expect("unvalidated WASI");
+        self.touch_path(path);
     }
 
     /// Write bytes to a path.

@@ -2357,11 +2357,13 @@ pub fn path_unlink_file(
             Kind::File { handle, path, .. } => {
                 if let Some(h) = handle {
                     wasi_try!(h.unlink().map_err(WasiFsError::into_wasi_err));
+                    pkg.borrow_mut().as_mut().map(|mut pkg| pkg.delete_path(&path));
                 } else {
                     // File is closed
                     // problem with the abstraction, we can't call unlink because there's no handle
                     // TODO: replace this code
-                    wasi_try!(std::fs::remove_file(path).map_err(|_| __WASI_EIO));
+                    wasi_try!(std::fs::remove_file(&path).map_err(|_| __WASI_EIO));
+                    pkg.borrow_mut().as_mut().map(|mut pkg| pkg.delete_path(&path));
                 }
             }
             Kind::Dir { .. } | Kind::Root { .. } => return __WASI_EISDIR,
@@ -2390,17 +2392,6 @@ pub fn path_unlink_file(
                 .orphan_fds
                 .insert(removed_inode, removed_inode_val.unwrap());
         }
-    }
-
-    {
-        let base_inode = state.fs.get_fd(fd).unwrap().inode;
-        let path = match &state.fs.inodes[base_inode].kind {
-            Kind::Dir { ref path, .. } => {
-                path.join(path_str)
-            },
-            kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
-        };
-        pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
     }
 
     __WASI_ESUCCESS
