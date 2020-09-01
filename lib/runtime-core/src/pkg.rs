@@ -270,12 +270,27 @@ impl Pkg {
         self
     }
 
+    /// Recursively copy a directory to the output root.
+    fn copy_path_to_output(&mut self, path: &Path) -> io::Result<()> {
+        if path.is_dir() {
+            fs::create_dir(self.result().root.path().join(path))?;
+            for entry in fs::read_dir(path)? {
+                let path = entry?.path();
+                self.copy_path_to_output(&path)?;
+            }
+        } else {
+            fs::copy(path, self.result().root.path().join(path))?;
+        }
+        Ok(())
+    }
+
     /// Set the preopened directories.
     pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> io::Result<Self> {
-        self.internal.preopened = preopened;
-        for path in &self.internal.preopened {
+        for path in &preopened {
             fs::create_dir(self.root.path().join(path))?;
+            self.copy_path_to_output(path)?;
         }
+        self.internal.preopened = preopened;
         Ok(self)
     }
 }
