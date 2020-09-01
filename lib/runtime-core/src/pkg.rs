@@ -19,7 +19,7 @@ pub struct Pkg {
     /// Binary bytes
     pub wasm_binary: Vec<u8>,
     /// Internal package configurations
-    pub internal: InternalPkg,
+    pub internal: PkgConfig,
     /// Package result
     result: Option<PkgResult>,
 }
@@ -39,7 +39,7 @@ pub struct PkgResult {
 /// Package configurations that are not related to files in the filesystem.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
-pub struct InternalPkg {
+pub struct PkgConfig {
     /// Path to the binary
     pub binary_path: Option<PathBuf>,
     /// Pre-opened directories
@@ -214,7 +214,7 @@ impl Pkg {
     ///
     /// package
     /// -- main.wasm
-    /// -- config  # serialized InternalPkg
+    /// -- config  # serialized PkgConfig
     /// -- root/
     /// -- -- ...
     pub fn zip_package(&self) -> io::Result<()> {
@@ -247,7 +247,7 @@ impl Pkg {
             root: TempDir::new("wasmer").expect("failed to create tempdir"),
             created: HashSet::new(),
             wasm_binary: Vec::new(),
-            internal: InternalPkg {
+            internal: PkgConfig {
                 binary_path: None,
                 preopened: Vec::new(),
                 args: Vec::new(),

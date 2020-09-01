@@ -34,7 +34,7 @@ use wasmer_runtime_core::tiering::{run_tiering, InteractiveShellContext, ShellEx
 use wasmer_runtime_core::{
     self,
     backend::{Compiler, CompilerConfig, Features},
-    Module, pkg::{InternalPkg, PkgResult},
+    Module, pkg::PkgResult,
 };
 #[cfg(unix)]
 use wasmer_runtime_core::{
@@ -55,6 +55,9 @@ use wasmer_runtime_core::backend::BackendCompilerConfig;
     feature = "backend-singlepass"
 )))]
 compile_error!("Please enable one or more of the compiler backends");
+
+/// Re-export package config.
+pub use wasmer_runtime_core::pkg::PkgConfig;
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct PrestandardFeatures {
@@ -873,7 +876,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
         &format!("malformed package: no config file at {:?}", config_path));
     let mut buffer = vec![];
     config_file.read_to_end(&mut buffer).expect("error reading config");
-    let config: InternalPkg =
+    let config: PkgConfig =
         bincode::deserialize(&buffer).expect("malformed config file");
 
     // Set working directory to root.
