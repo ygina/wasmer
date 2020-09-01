@@ -21,7 +21,7 @@ pub struct Pkg {
     /// Internal package configurations
     pub internal: InternalPkg,
     /// Package result
-    result: PkgResult,
+    result: Option<PkgResult>,
 }
 
 /// Package result.
@@ -79,6 +79,16 @@ impl Drop for Pkg {
 }
 
 impl Pkg {
+    /// Unwrap the result.
+    fn result(&mut self) -> &mut PkgResult {
+        self.result.as_mut().unwrap()
+    }
+
+    /// Take the result.
+    pub fn take_result(&mut self) -> Option<PkgResult> {
+        self.result.take()
+    }
+
     /// Indicate this file was accessed and must be preserved in the archive.
     /// The file is in its original state from before execution. It already
     /// existed prior to execution and has not yet been modified.
@@ -111,12 +121,12 @@ impl Pkg {
 
     /// Write bytes to stdout.
     pub fn write_stdout(&mut self, mut bytes: Vec<u8>) {
-        self.result.stdout.append(&mut bytes);
+        self.result().stdout.append(&mut bytes);
     }
 
     /// Write bytes to stderr.
     pub fn write_stderr(&mut self, mut bytes: Vec<u8>) {
-        self.result.stderr.append(&mut bytes);
+        self.result().stderr.append(&mut bytes);
     }
 
     /// Log package information.
@@ -175,11 +185,11 @@ impl Pkg {
                 args: Vec::new(),
                 envs: Vec::new(),
             },
-            result: PkgResult {
+            result: Some(PkgResult {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
                 root: TempDir::new("wasmer").expect("failed to create tempdir"),
-            },
+            }),
         }
     }
 

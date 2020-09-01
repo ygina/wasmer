@@ -10,7 +10,7 @@ use crate::{
     loader::Loader,
     memory::Memory,
     module::{ExportIndex, Module, ModuleInfo, ModuleInner},
-    pkg::Pkg,
+    pkg::{Pkg, PkgResult},
     sig_registry::SigRegistry,
     structures::TypedIndex,
     table::Table,
@@ -413,6 +413,16 @@ impl Instance {
     /// Set the value of an internal field.
     pub fn set_internal(&mut self, field: &InternalField, value: u64) {
         self.inner.backing.internals.0[field.index()] = value;
+    }
+
+    /// Package result.
+    pub fn take_result(&mut self) -> Option<PkgResult> {
+        unsafe { &*self.inner.vmctx }
+            .package
+            .borrow_mut()
+            .as_mut()
+            .take()
+            .map(|pkg| pkg.take_result().expect("Expected package to exist."))
     }
 }
 

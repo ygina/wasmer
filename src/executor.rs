@@ -34,7 +34,7 @@ use wasmer_runtime_core::tiering::{run_tiering, InteractiveShellContext, ShellEx
 use wasmer_runtime_core::{
     self,
     backend::{Compiler, CompilerConfig, Features},
-    Module, pkg::InternalPkg,
+    Module, pkg::{InternalPkg, PkgResult},
 };
 #[cfg(unix)]
 use wasmer_runtime_core::{
@@ -317,7 +317,7 @@ fn execute_wasi(
     env_vars: Vec<(&str, &str)>,
     module: wasmer_runtime_core::Module,
     wasm_binary: &[u8],
-) -> Result<(), String> {
+) -> Result<Option<PkgResult>, String> {
     let name = if let Some(cn) = &options.command_name {
         cn.clone()
     } else {
@@ -434,7 +434,7 @@ fn execute_wasi(
                 .call(&args)
                 .map_err(|e| format!("Calling invoke fn failed: {:?}", e))?;
             println!("{}({:?}) returned {:?}", invoke_fn, args, invoke_result);
-            return Ok(());
+            return Ok(instance.take_result());
         } else {
             result = start.call();
         }
@@ -453,7 +453,7 @@ fn execute_wasi(
             return Err(format!("error: {:?}", err));
         }
     }
-    Ok(())
+    Ok(instance.take_result())
 }
 
 #[cfg(feature = "backend-llvm")]
@@ -483,7 +483,7 @@ impl LLVMCallbacks for LLVMCLIOptions {
 }
 
 /// Execute a wasm/wat file
-fn execute_wasm(options: &Run) -> Result<(), String> {
+fn execute_wasm(options: &Run) -> Result<Option<PkgResult>, String> {
     let disable_cache = options.disable_cache;
 
     #[cfg(feature = "wasi")]
@@ -665,6 +665,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
             Vec::new(),
         )
         .map_err(|e| format!("{:?}", e))?;
+        Ok(instance.take_result())
     } else {
         #[cfg(feature = "wasi")]
         let wasi_version = wasmer_wasi::get_wasi_version(&module, true);
@@ -681,7 +682,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
                 env_vars,
                 module,
                 &wasm_binary,
-            )?;
+            )
         } else {
             let import_object = wasmer_runtime_core::import::ImportObject::new();
             let package = if options.record {
@@ -690,7 +691,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
             } else {
                 None
             };
-            let instance = module
+            let mut instance = module
                 .instantiate(&import_object, package)
                 .map_err(|e| format!("Can't instantiate module: {:?}", e))?;
 
@@ -728,10 +729,9 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
                 }
             }
             println!("{}({:?}) returned {:?}", invoke_fn, args, result);
+            Ok(instance.take_result())
         }
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "managed")]
@@ -842,10 +842,9 @@ fn get_backend(backend: Backend, path: &PathBuf) -> Backend {
     }
 }
 
-pub fn run(options: &mut Run) {
+pub fn run(options: &mut Run) -> Option<PkgResult> {
     if options.replay {
-        replay(options);
-        return;
+        return replay(options);
     }
 
     options.backend = get_backend(options.backend, &options.path);
@@ -856,7 +855,7 @@ pub fn run(options: &mut Run) {
         }
     }
     match execute_wasm(options) {
-        Ok(()) => {}
+        Ok(result) => result,
         Err(message) => {
             eprintln!("Error: {}", message);
             exit(1);
@@ -865,7 +864,7 @@ pub fn run(options: &mut Run) {
 }
 
 /// Runs logic for the `replay` subcommand
-fn replay(options: &mut Run) {
+fn replay(options: &mut Run) -> Option<PkgResult> {
     let base_path = &options.path;
 
     // Read the config file.

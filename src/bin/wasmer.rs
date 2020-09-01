@@ -125,7 +125,9 @@ fn main() {
         }
     });
     match options {
-        CLIOptions::Run(mut options) => run(&mut options),
+        CLIOptions::Run(mut options) => {
+            run(&mut options);
+        },
         #[cfg(not(target_os = "windows"))]
         CLIOptions::SelfUpdate => update::self_update(),
         #[cfg(target_os = "windows")]
