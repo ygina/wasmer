@@ -17,6 +17,9 @@ use std::process::exit;
 
 use bincode;
 use structopt::StructOpt;
+use flate2::read::GzDecoder;
+use tar::Archive;
+use tempdir::TempDir;
 
 use crate::*;
 #[cfg(feature = "backend-cranelift")]
@@ -868,7 +871,14 @@ pub fn run(options: &mut Run) -> Option<PkgResult> {
 
 /// Runs logic for the `replay` subcommand
 fn replay(options: &mut Run) -> Option<PkgResult> {
-    let base_path = &options.path;
+    let tar_gz = File::open(&options.path).expect(
+        &format!("invalid path: {:?}", &options.path));
+    let tar = GzDecoder::new(tar_gz);
+    let mut archive = Archive::new(tar);
+    let base_dir = TempDir::new("package").unwrap();
+    archive.unpack(base_dir.path()).expect(
+        &format!("malformed tar.gz at {:?}", &options.path));
+    let base_path = base_dir.path();
 
     // Read the config file.
     let config_path = base_path.join("config");
@@ -885,6 +895,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
         &format!("malformed package: no root directory at {:?}", root));
 
     // Edit options based on the config.
+    println!("{:?}", config);
     options.replay = false;
     options.path = config.binary_path.expect("expected binary path");
     options.pre_opened_directories = config.preopened;

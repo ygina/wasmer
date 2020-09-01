@@ -5,6 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use bincode;
+use flate2::{Compression, write::GzEncoder};
 use tempdir::TempDir;
 
 /// The serialized struct along with the compressed filesystem that can
@@ -218,10 +219,7 @@ impl Pkg {
     /// -- root/
     /// -- -- ...
     pub fn zip_package(&self) -> io::Result<()> {
-        let dir = Path::new("package");
-        fs::create_dir(dir)?;
-
-        // Wasm binary
+        // Add the wasm binary to the temporary root.
         let binary_path = self.root.path().join(self.internal.binary_path
             .as_ref()
             .expect("uninitialized binary path"));
@@ -231,11 +229,21 @@ impl Pkg {
         };
         let mut binary = fs::File::create(binary_path)?;
         binary.write_all(&self.wasm_binary)?;
-        // Config
-        let mut config = fs::File::create(dir.join("config"))?;
-        config.write_all(&bincode::serialize(&self.internal).unwrap())?;
-        // Root
-        fs::rename(self.root.path(), dir.join("root/"))?;
+
+        // Tar it up.
+        use tar::{Builder, Header};
+        let tar_gz = fs::File::create("package.tar.gz")?;
+        let enc = GzEncoder::new(tar_gz, Compression::default());
+        let mut tar = Builder::new(enc);
+        tar.append_dir_all("root", self.root.path())?;
+
+        // Tar the config.
+        let config = bincode::serialize(&self.internal).unwrap();
+        let mut header = Header::new_gnu();
+        header.set_size(config.len() as _);
+        header.set_cksum();
+        tar.append_data(&mut header, "config", &config[..])?;
+        tar.into_inner()?;
         Ok(())
     }
 }
