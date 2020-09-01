@@ -124,6 +124,27 @@ impl Pkg {
         self.created.insert(path.to_path_buf());
     }
 
+    /// Create a directory. Indicate this directory was newly created and
+    /// future accesses to this file should not preserve anything in the input
+    /// archive.
+    ///
+    /// The operation should already have been validated by the actual WASI
+    /// implementation. That is, the parent directories should already exist,
+    /// while the directory itself should not.
+    pub fn create_dir(&mut self, path: &Path) {
+        unimplemented!("create_dir {:?}", path)
+    }
+
+    /// Create empty files with the appropriate filenames in the path on the
+    /// output root.
+    ///
+    /// The operation should have already been validated by the actual WASI
+    /// implementation. That is, the path should be a directory and its file
+    /// names should have already been read.
+    pub fn read_dir(&mut self, path: &Path) {
+        unimplemented!("read_dir {:?}", path)
+    }
+
     /// Rename a path.
     ///
     /// The operation should already have been validated by the actual
