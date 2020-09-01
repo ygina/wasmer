@@ -122,6 +122,8 @@ impl Pkg {
     /// while the file itself should not.
     pub fn create_file(&mut self, path: &Path) {
         debug!("create_file {:?}", path);
+        fs::File::create(self.result().root.path().join(path))
+            .expect("unvalidated WASI");
         self.created.insert(path.to_path_buf());
     }
 
