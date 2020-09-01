@@ -1231,6 +1231,7 @@ pub fn fd_write(
     // } else {
     //     trace!("wasi::fd_write: fd={}", fd);
     // }
+    let pkg = ctx.package.clone();
     let (memory, state) = get_memory_and_wasi_state(ctx, 0);
     let iovs_arr_cell = wasi_try!(iovs.deref(memory, 0, iovs_len));
     let nwritten_cell = wasi_try!(nwritten.deref(memory));
@@ -1241,7 +1242,16 @@ pub fn fd_write(
             if let Some(ref mut stdout) =
                 wasi_try!(state.fs.stdout_mut().map_err(WasiFsError::into_wasi_err))
             {
-                wasi_try!(write_bytes(stdout, memory, iovs_arr_cell))
+                let bytes_written = wasi_try!(write_bytes(stdout, memory, iovs_arr_cell));
+                for iov in iovs_arr_cell {
+                    let iov_inner = iov.get();
+                    let bytes = wasi_try!(iov_inner.buf.deref(memory, 0, iov_inner.buf_len));
+                    let bytes = bytes.iter().map(|b_cell| b_cell.get()).collect::<Vec<u8>>();
+                    pkg.borrow_mut()
+                        .as_mut()
+                        .map(|mut pkg| pkg.write_stdout(bytes));
+                }
+                bytes_written
             } else {
                 return __WASI_EBADF;
             }
@@ -1250,7 +1260,16 @@ pub fn fd_write(
             if let Some(ref mut stderr) =
                 wasi_try!(state.fs.stderr_mut().map_err(WasiFsError::into_wasi_err))
             {
-                wasi_try!(write_bytes(stderr, memory, iovs_arr_cell))
+                let bytes_written = wasi_try!(write_bytes(stderr, memory, iovs_arr_cell));
+                for iov in iovs_arr_cell {
+                    let iov_inner = iov.get();
+                    let bytes = wasi_try!(iov_inner.buf.deref(memory, 0, iov_inner.buf_len));
+                    let bytes = bytes.iter().map(|b_cell| b_cell.get()).collect::<Vec<u8>>();
+                    pkg.borrow_mut()
+                        .as_mut()
+                        .map(|mut pkg| pkg.write_stderr(bytes));
+                }
+                bytes_written
             } else {
                 return __WASI_EBADF;
             }

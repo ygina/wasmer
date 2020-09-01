@@ -109,6 +109,16 @@ impl Pkg {
         self.created.insert(path.to_path_buf());
     }
 
+    /// Write bytes to stdout.
+    pub fn write_stdout(&mut self, mut bytes: Vec<u8>) {
+        self.result.stdout.append(&mut bytes);
+    }
+
+    /// Write bytes to stderr.
+    pub fn write_stderr(&mut self, mut bytes: Vec<u8>) {
+        self.result.stderr.append(&mut bytes);
+    }
+
     /// Log package information.
     pub fn log_package(&self) -> io::Result<()> {
         println!("Writing package.");
