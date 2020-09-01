@@ -121,6 +121,7 @@ impl Pkg {
     /// implementation. That is, the parent directories should already exist,
     /// while the file itself should not.
     pub fn create_file(&mut self, path: &Path) {
+        debug!("create_file {:?}", path);
         self.created.insert(path.to_path_buf());
     }
 
@@ -132,6 +133,7 @@ impl Pkg {
     /// implementation. That is, the parent directories should already exist,
     /// while the directory itself should not.
     pub fn create_dir(&mut self, path: &Path) {
+        debug!("create_dir {:?}", path);
         unimplemented!("create_dir {:?}", path)
     }
 
@@ -142,6 +144,7 @@ impl Pkg {
     /// implementation. That is, the path should be a directory and its file
     /// names should have already been read.
     pub fn read_dir(&mut self, path: &Path) {
+        debug!("read_dir {:?}", path);
         unimplemented!("read_dir {:?}", path)
     }
 
@@ -150,6 +153,7 @@ impl Pkg {
     /// The operation should already have been validated by the actual
     /// WASI implementation. That is, the old path should already exist.
     pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) {
+        debug!("rename {:?} {:?}", old_path, new_path);
         unimplemented!("rename {:?} => {:?}", old_path, new_path)
     }
 
@@ -158,6 +162,7 @@ impl Pkg {
     /// The operation should already have been validated by the actual
     /// WASI implementation. That is, the path should already exist.
     pub fn delete_path(&mut self, path: &Path) {
+        debug!("delete {:?}", path);
         unimplemented!("delete {:?}", path)
     }
 
@@ -167,6 +172,7 @@ impl Pkg {
     /// WASI implementation. That is, the path should already exist.
     /// The operation appends the bytes to the existing file.
     pub fn write_path(&mut self, path: &Path, bytes: &Vec<u8>) {
+        debug!("write {:?} {} bytes", path, bytes.len());
         unimplemented!("write {:?} {} bytes", path, bytes.len());
     }
 
