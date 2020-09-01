@@ -94,29 +94,59 @@ impl Pkg {
     /// existed prior to execution and has not yet been modified.
     ///
     /// Returns whether the path was newly added.
-    pub fn add_path(&mut self, path: &Path) -> io::Result<bool> {
+    pub fn touch_path(&mut self, path: &Path) -> bool {
         let new_path = self.root.path().join(path);
         if !new_path.exists() && !self.created.contains(path) {
             // Copy the path to the new path if the new path doesn't exist
             if path.is_dir() {
-                fs::create_dir_all(new_path)?;
+                fs::create_dir_all(new_path).expect("unvalidated WASI");
             } else {
                 match new_path.parent() {
-                    Some(parent) => fs::create_dir_all(parent)?,
+                    Some(parent) => fs::create_dir_all(parent)
+                        .expect("unvalidated WASI"),
                     None => {},
                 };
-                fs::copy(path, new_path)?;
+                fs::copy(path, new_path).expect("unvalidated WASI");
             }
-            Ok(true)
+            true
         } else {
-            Ok(false)
+            false
         }
     }
 
-    /// Indicate this file was newly created and future accesses to this file
-    /// should not preserve anything in the archive.
-    pub fn create_path(&mut self, path: &Path) {
+    /// Create a file. Indicate this file was newly created and future accesses
+    /// to this file should not preserve anything in the input archive.
+    ///
+    /// The operation should already have been validated by the actual WASI
+    /// implementation. That is, the parent directories should already exist,
+    /// while the file itself should not.
+    pub fn create_file(&mut self, path: &Path) {
         self.created.insert(path.to_path_buf());
+    }
+
+    /// Rename a path.
+    ///
+    /// The operation should already have been validated by the actual
+    /// WASI implementation. That is, the old path should already exist.
+    pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) {
+        unimplemented!("rename {:?} => {:?}", old_path, new_path)
+    }
+
+    /// Delete a path.
+    ///
+    /// The operation should already have been validated by the actual
+    /// WASI implementation. That is, the path should already exist.
+    pub fn delete_path(&mut self, path: &Path) {
+        unimplemented!("delete {:?}", path)
+    }
+
+    /// Write bytes to a path.
+    ///
+    /// The operation should already have been validated by the actual
+    /// WASI implementation. That is, the path should already exist.
+    /// The operation appends the bytes to the existing file.
+    pub fn write_path(&mut self, path: &Path, bytes: &Vec<u8>) {
+        unimplemented!("write {:?} {} bytes", path, bytes.len());
     }
 
     /// Write bytes to stdout.

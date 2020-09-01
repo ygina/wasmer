@@ -1515,15 +1515,7 @@ pub fn path_filestat_get(
             },
             kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
         };
-        pkg.borrow_mut().as_mut().map(|mut pkg| {
-            let added = pkg
-                .add_path(&path)
-                .map_err(|e| error!("Error updating package: {:?}", e))
-                .unwrap();
-            if added {
-                error!("PACKAGE");
-            }
-        });
+        pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
     }
     let stat = wasi_try!(state
         .fs
@@ -1953,15 +1945,9 @@ pub fn path_open(
         };
         pkg.borrow_mut().as_mut().map(|mut pkg| {
             if !new_file {
-                let added = pkg
-                    .add_path(&path)
-                    .map_err(|e| error!("Error updating package: {:?}", e))
-                    .unwrap();
-                if added {
-                    error!("PACKAGE");
-                }
+                pkg.touch_path(&path);
             } else {
-                pkg.create_path(&path);
+                pkg.create_file(&path);
             }
         });
     }
@@ -2223,15 +2209,7 @@ pub fn path_rename(
             },
             kind => unimplemented!("unhandled inode fd={} {:?}", old_fd, kind),
         };
-        pkg.borrow_mut().as_mut().map(|mut pkg| {
-            let added = pkg
-                .add_path(&path)
-                .map_err(|e| error!("Error updating package: {:?}", e))
-                .unwrap();
-            if added {
-                error!("PACKAGE");
-            }
-        });
+        pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
     }
 
     __WASI_ESUCCESS
@@ -2417,15 +2395,7 @@ pub fn path_unlink_file(
             },
             kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
         };
-        pkg.borrow_mut().as_mut().map(|mut pkg| {
-            let added = pkg
-                .add_path(&path)
-                .map_err(|e| error!("Error updating package: {:?}", e))
-                .unwrap();
-            if added {
-                error!("PACKAGE");
-            }
-        });
+        pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
     }
 
     __WASI_ESUCCESS
