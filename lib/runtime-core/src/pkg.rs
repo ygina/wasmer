@@ -182,7 +182,9 @@ impl Pkg {
     /// The operation appends the bytes to the existing file.
     pub fn write_path(&mut self, path: &Path, bytes: &Vec<u8>) {
         debug!("write {:?} {} bytes", path, bytes.len());
-        unimplemented!("write {:?} {} bytes", path, bytes.len());
+        fs::write(self.result().root.path().join(path), &bytes[..])
+            .expect("unvalidated WASI");
+        self.touch_path(path);
     }
 
     /// Write bytes to stdout.

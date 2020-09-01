@@ -1285,10 +1285,19 @@ pub fn fd_write(
             let inode = &mut state.fs.inodes[fd_entry.inode];
 
             let bytes_written = match &mut inode.kind {
-                Kind::File { handle, .. } => {
+                Kind::File { handle, path, .. } => {
                     if let Some(handle) = handle {
                         handle.seek(std::io::SeekFrom::Start(offset as u64));
-                        wasi_try!(write_bytes(handle, memory, iovs_arr_cell))
+                        let bytes_written = wasi_try!(write_bytes(handle, memory, iovs_arr_cell));
+                        for iov in iovs_arr_cell {
+                            let iov_inner = iov.get();
+                            let bytes = wasi_try!(iov_inner.buf.deref(memory, 0, iov_inner.buf_len));
+                            let bytes = bytes.iter().map(|b_cell| b_cell.get()).collect::<Vec<u8>>();
+                            pkg.borrow_mut().as_mut().map(|mut pkg| {
+                                pkg.write_path(&path, &bytes);
+                            });
+                        }
+                        bytes_written
                     } else {
                         return __WASI_EINVAL;
                     }
@@ -1299,7 +1308,8 @@ pub fn fd_write(
                 }
                 Kind::Symlink { .. } => unimplemented!("Symlinks in wasi::fd_write"),
                 Kind::Buffer { buffer } => {
-                    wasi_try!(write_bytes(&mut buffer[offset..], memory, iovs_arr_cell))
+                    let bytes_written = wasi_try!(write_bytes(&mut buffer[offset..], memory, iovs_arr_cell));
+                    unimplemented!("Buffer in wasi::fd_write");
                 }
             };
 
