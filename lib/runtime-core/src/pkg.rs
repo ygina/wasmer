@@ -51,20 +51,20 @@ pub struct PkgConfig {
     pub envs: Vec<String>,
 }
 
-fn print_fs(path: &Path, level: usize) -> io::Result<()> {
-    let prefix = (0..level).map(|_| "--").collect::<String>();
-    let filename = path.file_name().unwrap().to_str().unwrap();
-    if path.is_dir() {
-        println!("{}{}/", prefix, filename);
-        for entry in fs::read_dir(path)? {
-            let path = entry?.path();
-            print_fs(&path, level + 1)?;
-        }
-    } else {
-        println!("{}{}", prefix, filename);
-    }
-    Ok(())
-}
+// fn print_fs(path: &Path, level: usize) -> io::Result<()> {
+//     let prefix = (0..level).map(|_| "--").collect::<String>();
+//     let filename = path.file_name().unwrap().to_str().unwrap();
+//     if path.is_dir() {
+//         println!("{}{}/", prefix, filename);
+//         for entry in fs::read_dir(path)? {
+//             let path = entry?.path();
+//             print_fs(&path, level + 1)?;
+//         }
+//     } else {
+//         println!("{}{}", prefix, filename);
+//     }
+//     Ok(())
+// }
 
 impl Drop for Pkg {
     fn drop(&mut self) {
@@ -205,7 +205,7 @@ impl Pkg {
         println!("args: {:?}", self.internal.args);
         println!("envs: {:?}", self.internal.envs);
         println!("binary: {} bytes", self.wasm_binary.len());
-        print_fs(self.root.path(), 0)?;
+        // print_fs(self.root.path(), 0)?;
         println!("result: {:?}", self.result);
         Ok(())
     }
