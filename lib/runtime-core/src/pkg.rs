@@ -43,6 +43,8 @@ pub struct PkgConfig {
     pub binary_path: Option<PathBuf>,
     /// Pre-opened directories
     pub preopened: Vec<PathBuf>,
+    /// Mapped directories
+    pub mapped_dirs: Vec<(String, PathBuf)>,
     /// Arguments
     pub args: Vec<String>,
     /// Environment variables
@@ -228,6 +230,7 @@ impl Pkg {
             internal: PkgConfig {
                 binary_path: None,
                 preopened: Vec::new(),
+                mapped_dirs: Vec::new(),
                 args: Vec::new(),
                 envs: Vec::new(),
             },
@@ -271,5 +274,14 @@ impl Pkg {
         }
         self.internal.preopened = preopened;
         Ok(self)
+    }
+
+    /// Preopen directorys with a different names exposed to the WASI.
+    ///
+    /// Directories must be read-only. Typically, they represent libraries
+    /// or packages installed from a standard package manager.
+    pub fn map_dirs(mut self, dirs: Vec<(String, PathBuf)>) -> Self {
+        self.internal.mapped_dirs = dirs;
+        self
     }
 }
