@@ -33,8 +33,6 @@ pub struct PkgResult {
     pub stdout: Vec<u8>,
     /// Stderr
     pub stderr: Vec<u8>,
-    /// Output filesystem
-    pub root: TempDir,
 }
 
 /// Package configurations that are not related to files in the filesystem.
@@ -117,24 +115,14 @@ impl Pkg {
 
     /// Create a file. Indicate this file was newly created and future accesses
     /// to this file should not preserve anything in the input archive.
-    ///
-    /// The operation should already have been validated by the actual WASI
-    /// implementation. That is, the parent directories should already exist,
-    /// while the file itself should not.
     pub fn create_file(&mut self, path: &Path) {
         debug!("create_file {:?}", path);
-        fs::File::create(self.result().root.path().join(path))
-            .expect("unvalidated WASI");
         self.created.insert(path.to_path_buf());
     }
 
     /// Create a directory. Indicate this directory was newly created and
     /// future accesses to this file should not preserve anything in the input
     /// archive.
-    ///
-    /// The operation should already have been validated by the actual WASI
-    /// implementation. That is, the parent directories should already exist,
-    /// while the directory itself should not.
     pub fn create_dir(&mut self, path: &Path) {
         debug!("create_dir {:?}", path);
         unimplemented!("create_dir {:?}", path)
@@ -152,39 +140,21 @@ impl Pkg {
     }
 
     /// Rename a path.
-    ///
-    /// The operation should already have been validated by the actual
-    /// WASI implementation. That is, the old path should already exist.
     pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) {
         debug!("rename {:?} {:?}", old_path, new_path);
-        fs::rename(
-            self.result().root.path().join(old_path),
-            self.result().root.path().join(new_path),
-        ).expect("unvalidated WASI");
         self.created.insert(new_path.to_path_buf());
         self.touch_path(old_path);
     }
 
     /// Delete a path.
-    ///
-    /// The operation should already have been validated by the actual
-    /// WASI implementation. That is, the path should already exist.
     pub fn delete_path(&mut self, path: &Path) {
         debug!("delete {:?}", path);
-        fs::remove_file(self.result().root.path().join(path))
-            .expect("unvalidated WASI");
         self.touch_path(path);
     }
 
     /// Write bytes to a path.
-    ///
-    /// The operation should already have been validated by the actual
-    /// WASI implementation. That is, the path should already exist.
-    /// The operation appends the bytes to the existing file.
     pub fn write_path(&mut self, path: &Path, bytes: &Vec<u8>) {
         debug!("write {:?} {} bytes", path, bytes.len());
-        fs::write(self.result().root.path().join(path), &bytes[..])
-            .expect("unvalidated WASI");
         self.touch_path(path);
     }
 
@@ -264,7 +234,6 @@ impl Pkg {
             result: Some(PkgResult {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
-                root: TempDir::new("wasmer").expect("failed to create tempdir"),
             }),
         }
     }
@@ -295,25 +264,10 @@ impl Pkg {
         self
     }
 
-    /// Recursively copy a directory to the output root.
-    fn copy_path_to_output(&mut self, path: &Path) -> io::Result<()> {
-        if path.is_dir() {
-            fs::create_dir(self.result().root.path().join(path))?;
-            for entry in fs::read_dir(path)? {
-                let path = entry?.path();
-                self.copy_path_to_output(&path)?;
-            }
-        } else {
-            fs::copy(path, self.result().root.path().join(path))?;
-        }
-        Ok(())
-    }
-
     /// Set the preopened directories.
     pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> io::Result<Self> {
         for path in &preopened {
             fs::create_dir(self.root.path().join(path))?;
-            self.copy_path_to_output(path)?;
         }
         self.internal.preopened = preopened;
         Ok(self)
