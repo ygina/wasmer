@@ -19,7 +19,6 @@ use bincode;
 use structopt::StructOpt;
 use flate2::read::GzDecoder;
 use tar::Archive;
-use tempdir::TempDir;
 
 use crate::*;
 #[cfg(feature = "backend-cranelift")]
@@ -133,9 +132,10 @@ pub struct Run {
     #[structopt(parse(from_os_str))]
     pub path: PathBuf,
 
-    /// Whether to use input path for replay
-    #[structopt(long = "replay")]
-    pub replay: bool,
+    /// The path to package.tar.gz for replay, which also determines
+    /// the input path is to be used as the replay root
+    #[structopt(long = "pkg-path")]
+    pub pkg_path: Option<PathBuf>,
 
     /// Name of the backend to use (x86_64)
     #[cfg(target_arch = "x86_64")]
@@ -232,12 +232,17 @@ pub struct Run {
 }
 
 impl Run {
+    /// Create a new `Run` command.
+    ///
+    /// Normally, the path is the path to the wasm binary.
+    /// If replaying, pass in the path to the replay root, and set the
+    /// package path `pkg_path` to the compressed package.
     pub fn new(path: PathBuf) -> Run {
         Run {
             path,
             disable_cache: false,
             record: false,
-            replay: false,
+            pkg_path: None,
             #[cfg(target_arch = "x86_64")]
             backend: Backend::Auto,
             #[cfg(target_arch = "aarch64")]
@@ -849,8 +854,8 @@ fn get_backend(backend: Backend, path: &PathBuf) -> Backend {
 }
 
 pub fn run(options: &mut Run) -> Option<PkgResult> {
-    if options.replay {
-        return replay(options);
+    if let Some(pkg_path) = options.pkg_path.take() {
+        return replay(options, pkg_path);
     }
 
     options.backend = get_backend(options.backend, &options.path);
@@ -870,15 +875,18 @@ pub fn run(options: &mut Run) -> Option<PkgResult> {
 }
 
 /// Runs logic for the `replay` subcommand
-fn replay(options: &mut Run) -> Option<PkgResult> {
-    let tar_gz = File::open(&options.path).expect(
-        &format!("invalid path: {:?}", &options.path));
+fn replay(options: &mut Run, pkg_path: PathBuf) -> Option<PkgResult> {
+    // Open the tar.gz file at the given path (which can be anywhere)
+    // and unpack it into a temporary directory. This temporary directory
+    // will later be the root.
+    let tar_gz = File::open(&pkg_path).expect(
+        &format!("invalid path: {:?}", &pkg_path));
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
-    let base_dir = TempDir::new("package").unwrap();
-    archive.unpack(base_dir.path()).expect(
-        &format!("malformed tar.gz at {:?}", &options.path));
-    let base_path = base_dir.path();
+    let base_path = &options.path;
+    assert!(base_path.is_dir());
+    archive.unpack(base_path).expect(
+        &format!("malformed tar.gz at {:?}", &pkg_path));
 
     // Read the config file.
     let config_path = base_path.join("config");
@@ -896,7 +904,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
 
     // Edit options based on the config.
     println!("{:?}", config);
-    options.replay = false;
+    options.pkg_path = None;
     options.path = config.binary_path.expect("expected binary path");
     options.pre_opened_directories = config.preopened;
     options.args = config.args;
