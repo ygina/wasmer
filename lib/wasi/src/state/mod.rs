@@ -92,9 +92,11 @@ pub enum Kind {
     Dir {
         /// Parent directory
         parent: Option<Inode>,
-        /// The path on the host system where the directory is located
+        /// The path on the host system where the directory is located.
+        /// There must be at least one path but there can be more than one
+        /// path if multiple are mapped and/or the original is preopened.
         // TODO: wrap it like WasiFile
-        path: PathBuf,
+        paths: Vec<PathBuf>,
         /// The entries of a directory are lazily filled.
         entries: HashMap<String, Inode>,
     },
@@ -200,7 +202,7 @@ impl WasiFs {
             let kind = if cur_dir_metadata.is_dir() {
                 Kind::Dir {
                     parent: Some(root_inode),
-                    path: dir.clone(),
+                    paths: vec![dir.clone()],
                     entries: Default::default(),
                 }
             } else {
@@ -250,7 +252,7 @@ impl WasiFs {
             let kind = if cur_dir_metadata.is_dir() {
                 Kind::Dir {
                     parent: Some(root_inode),
-                    path: real_dir.clone(),
+                    paths: vec![real_dir.clone()],
                     entries: Default::default(),
                 }
             } else {
@@ -305,6 +307,24 @@ impl WasiFs {
                 &path.to_string_lossy(),
                 &alias
             );
+            let key = if let Some(alias) = &alias {
+                alias.clone()
+            } else {
+                path.to_string_lossy().into_owned()
+            };
+            if let Kind::Root { entries } = &wasi_fs.inodes[root_inode].kind {
+                // Preopened directory with the same alias already exists
+                if let Some(existing_inode) = entries.get(&key) {
+                    let existing_inode = existing_inode.clone();
+                    if let Kind::Dir { paths, .. } = &mut wasi_fs.inodes[existing_inode].kind {
+                        paths.push(path.clone());
+                        continue;
+                    } else {
+                        panic!("only directories may be duplicated");
+                    }
+                }
+            }
+
             let cur_dir_metadata = path.metadata().map_err(|e| {
                 format!(
                     "Could not get metadata for file {:?}: {}",
@@ -316,7 +336,7 @@ impl WasiFs {
             let kind = if cur_dir_metadata.is_dir() {
                 Kind::Dir {
                     parent: Some(root_inode),
-                    path: path.clone(),
+                    paths: vec![path.clone()],
                     entries: Default::default(),
                 }
             } else {
@@ -368,11 +388,7 @@ impl WasiFs {
 
                 rights
             };
-            let inode = if let Some(alias) = &alias {
-                wasi_fs.create_inode(kind, true, alias.clone())
-            } else {
-                wasi_fs.create_inode(kind, true, path.to_string_lossy().into_owned())
-            }
+            let inode = wasi_fs.create_inode(kind, true, key.clone())
             .map_err(|e| {
                 format!(
                     "Failed to create inode for preopened dir: WASI error code: {}",
@@ -397,12 +413,7 @@ impl WasiFs {
                 .create_fd(rights, rights, 0, fd_flags, inode)
                 .map_err(|e| format!("Could not open fd for file {:?}: {}", path, e))?;
             if let Kind::Root { entries } = &mut wasi_fs.inodes[root_inode].kind {
-                let existing_entry = if let Some(alias) = &alias {
-                    entries.insert(alias.clone(), inode)
-                } else {
-                    entries.insert(path.to_string_lossy().into_owned(), inode)
-                };
-                // todo handle collisions
+                let existing_entry = entries.insert(key, inode);
                 assert!(existing_entry.is_none())
             }
             wasi_fs.preopen_fds.push(fd);
@@ -564,7 +575,7 @@ impl WasiFs {
 
                     let kind = Kind::Dir {
                         parent: Some(cur_inode),
-                        path: PathBuf::from(""),
+                        paths: vec![PathBuf::from("")],
                         entries: HashMap::new(),
                     };
 
@@ -725,7 +736,7 @@ impl WasiFs {
         &mut self,
         base: __wasi_fd_t,
         path: &str,
-        mut symlink_count: u32,
+        symlink_count: u32,
         follow_symlinks: bool,
     ) -> Result<Inode, __wasi_errno_t> {
         if symlink_count > MAX_SYMLINKS {
@@ -748,7 +759,7 @@ impl WasiFs {
                     Kind::Buffer { .. } => unimplemented!("state::get_inode_at_path for buffers"),
                     Kind::Dir {
                         ref mut entries,
-                        ref path,
+                        ref paths,
                         ref parent,
                         ..
                     } => {
@@ -765,33 +776,40 @@ impl WasiFs {
                             _ => (),
                         }
                         // used for full resolution of symlinks
-                        let mut loop_for_symlink = false;
                         if let Some(entry) =
                             entries.get(component.as_os_str().to_string_lossy().as_ref())
                         {
                             cur_inode = *entry;
                         } else {
-                            let file = {
-                                let mut cd = path.clone();
-                                cd.push(component);
-                                cd
+                            // Open inode at the first path that resolves.
+                            // Paths are ordered in the order they were passed
+                            // as arguments. Ideally, preopened directories
+                            // come before mapped libraries and imports.
+                            let (file, metadata) = {
+                                let mut result = None;
+                                for path in paths {
+                                    let mut cd = path.clone();
+                                    cd.push(component);
+                                    let metadata = cd.symlink_metadata().ok();
+                                    if let Some(metadata) = metadata {
+                                        result = Some((cd, metadata));
+                                        break;
+                                    }
+                                }
+                                result.ok_or(__WASI_EINVAL)?
                             };
-                            let metadata = file.symlink_metadata().ok().ok_or(__WASI_EINVAL)?;
                             let file_type = metadata.file_type();
                             // we want to insert newly opened dirs and files, but not transient symlinks
                             // TODO: explain why (think about this deeply when well rested)
-                            let mut should_insert = false;
 
                             let kind = if file_type.is_dir() {
-                                should_insert = true;
                                 // load DIR
                                 Kind::Dir {
                                     parent: Some(cur_inode),
-                                    path: file.clone(),
+                                    paths: vec![file.clone()],
                                     entries: Default::default(),
                                 }
                             } else if file_type.is_file() {
-                                should_insert = true;
                                 // load file
                                 Kind::File {
                                     handle: None,
@@ -799,44 +817,23 @@ impl WasiFs {
                                     fd: None,
                                 }
                             } else if file_type.is_symlink() {
-                                let link_value = file.read_link().ok().ok_or(__WASI_EIO)?;
-                                debug!("attempting to decompose path {:?}", link_value);
-
-                                let (pre_open_dir_fd, relative_path) = if link_value.is_relative() {
-                                    self.path_into_pre_open_and_relative_path(&file)?
-                                } else {
-                                    unimplemented!("Absolute symlinks are not yet supported");
-                                };
-                                loop_for_symlink = true;
-                                symlink_count += 1;
-                                Kind::Symlink {
-                                    base_po_dir: pre_open_dir_fd,
-                                    path_to_symlink: relative_path,
-                                    relative_path: link_value,
-                                }
+                                unimplemented!("don't handle symlinks");
                             } else {
                                 unimplemented!("state::get_inode_at_path unknown file type: not file, directory, or symlink");
                             };
 
                             let new_inode =
                                 self.create_inode(kind, false, file.to_string_lossy().to_string())?;
-                            if should_insert {
-                                if let Kind::Dir {
-                                    ref mut entries, ..
-                                } = &mut self.inodes[cur_inode].kind
-                                {
-                                    entries.insert(
-                                        component.as_os_str().to_string_lossy().to_string(),
-                                        new_inode,
-                                    );
-                                }
+                            if let Kind::Dir {
+                                ref mut entries, ..
+                            } = &mut self.inodes[cur_inode].kind
+                            {
+                                entries.insert(
+                                    component.as_os_str().to_string_lossy().to_string(),
+                                    new_inode,
+                                );
                             }
                             cur_inode = new_inode;
-
-                            if loop_for_symlink && follow_symlinks {
-                                debug!("Following symlink to {:?}", cur_inode);
-                                continue 'symlink_resolution;
-                            }
                         }
                     }
                     Kind::Root { entries } => {
@@ -911,6 +908,7 @@ impl WasiFs {
     ///
     /// TODO: evaluate users of this function and explain why this behavior is
     /// not the same as libpreopen or update its behavior to be the same.
+    #[allow(dead_code)]
     fn path_into_pre_open_and_relative_path(
         &self,
         path: &Path,
@@ -919,7 +917,10 @@ impl WasiFs {
         for po_fd in &self.preopen_fds {
             let po_inode = self.fd_map[po_fd].inode;
             let po_path = match &self.inodes[po_inode].kind {
-                Kind::Dir { path, .. } => &**path,
+                Kind::Dir { paths, .. } => {
+                    assert_eq!(paths.len(), 1);
+                    &paths[0]
+                },
                 Kind::Root { .. } => Path::new("/"),
                 _ => unreachable!("Preopened FD that's not a directory or the root"),
             };
@@ -1330,7 +1331,10 @@ impl WasiFs {
                 }
                 None => path.metadata().ok()?,
             },
-            Kind::Dir { path, .. } => path.metadata().ok()?,
+            Kind::Dir { paths, .. } => {
+                assert_eq!(paths.len(), 1);
+                paths[0].metadata().ok()?
+            },
             Kind::Symlink {
                 base_po_dir,
                 path_to_symlink,
@@ -1342,8 +1346,9 @@ impl WasiFs {
                     Kind::Root { .. } => {
                         path_to_symlink.clone().symlink_metadata().ok()?
                     }
-                    Kind::Dir { path, .. } => {
-                        let mut real_path = path.clone();
+                     Kind::Dir { paths, .. } => {
+                        assert_eq!(paths.len(), 1);
+                        let mut real_path = paths[0].clone();
                         // PHASE 1: ignore all possible symlinks in `relative_path`
                         // TODO: walk the segments of `relative_path` via the entries of the Dir
                         //       use helper function to avoid duplicating this logic (walking this will require
@@ -1394,13 +1399,16 @@ impl WasiFs {
                 let mut empty_handle = None;
                 std::mem::swap(handle, &mut empty_handle);
             }
-            Kind::Dir { parent, path, .. } => {
-                debug!("Closing dir {:?}", &path);
-                let key = path
-                    .file_name()
-                    .ok_or(__WASI_EINVAL)?
-                    .to_string_lossy()
-                    .to_string();
+            Kind::Dir { parent, paths, .. } => {
+                debug!("Closing dir(s) {:?}", &paths);
+                let mut keys = vec![];
+                for path in paths {
+                    keys.push(path
+                        .file_name()
+                        .ok_or(__WASI_EINVAL)?
+                        .to_string_lossy()
+                        .to_string());
+                }
                 if let Some(p) = parent.clone() {
                     match &mut self.inodes[p].kind {
                         Kind::Dir { entries, .. } | Kind::Root { entries } => {
@@ -1416,10 +1424,16 @@ impl WasiFs {
                                 if let Some(i) = idx {
                                     // only remove entry properly if this is the original preopen FD
                                     // calling `path_open` can give you an fd to the same inode as a preopen fd
-                                    entries.remove(&key);
+                                    for key in keys {
+                                        // TODO(ygina): is this correct?
+                                        warn!("removing {:?}", key);
+                                        entries.remove(&key);
+                                    }
                                     self.preopen_fds.remove(i);
                                     // Maybe recursively closes fds if original preopen?
                                 }
+                            } else {
+                                assert_eq!(keys.len(), 1);
                             }
                         }
                         _ => unreachable!(

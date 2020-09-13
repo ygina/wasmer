@@ -973,15 +973,21 @@ pub fn fd_readdir(
     let mut buf_idx = 0;
 
     let entries = match &state.fs.inodes[working_dir.inode].kind {
-        Kind::Dir { path, .. } => {
+        Kind::Dir { paths, .. } => {
+            let mut entries = vec![];
             // TODO: refactor this code
             // we need to support multiple calls,
             // simple and obviously correct implementation for now:
             // maintain consistent order via lexacographic sorting
-            let mut entries = wasi_try!(wasi_try!(std::fs::read_dir(path).map_err(|_| __WASI_EIO))
-                .collect::<Result<Vec<std::fs::DirEntry>, _>>()
-                .map_err(|_| __WASI_EIO));
+            for path in paths {
+                let mut path_entries =
+                    wasi_try!(wasi_try!(std::fs::read_dir(path).map_err(|_| __WASI_EIO))
+                    .collect::<Result<Vec<std::fs::DirEntry>, _>>()
+                    .map_err(|_| __WASI_EIO));
+                entries.append(&mut path_entries);
+            }
             entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            entries.dedup_by_key(|a| a.file_name());
             wasi_try!(entries
                 .into_iter()
                 .map(|entry| Ok((
@@ -1429,9 +1435,10 @@ pub fn path_create_directory(
         match &mut state.fs.inodes[cur_dir_inode].kind {
             Kind::Dir {
                 ref mut entries,
-                path,
+                paths,
                 parent,
             } => {
+                assert_eq!(paths.len(), 1);
                 match comp.borrow() {
                     ".." => {
                         if let Some(p) = parent {
@@ -1445,17 +1452,33 @@ pub fn path_create_directory(
                 if let Some(child) = entries.get(comp) {
                     cur_dir_inode = *child;
                 } else {
+                    // If the new directory already exists in either path,
+                    // then it already exists.
+                    for path in paths.iter() {
+                        let mut adjusted_path = path.clone();
+                        // TODO: double check this doesn't risk breaking the sandbox
+                        adjusted_path.push(comp);
+                        if adjusted_path.exists() {
+                            if !adjusted_path.is_dir() {
+                                return __WASI_ENOTDIR;
+                            } else {
+                                return __WASI_EIO;
+                            }
+                        }
+                    }
+
+                    // Otherwise it doesn't matter which path it's created in.
+                    // Take the first one. Note: fs::create_dir errors if the
+                    // path already exists.
+                    assert!(!paths.is_empty());
+                    let path = &paths[0];
                     let mut adjusted_path = path.clone();
                     // TODO: double check this doesn't risk breaking the sandbox
                     adjusted_path.push(comp);
-                    if adjusted_path.exists() && !adjusted_path.is_dir() {
-                        return __WASI_ENOTDIR;
-                    } else if !adjusted_path.exists() {
-                        wasi_try!(std::fs::create_dir(&adjusted_path).ok(), __WASI_EIO);
-                    }
+                    std::fs::create_dir(&adjusted_path).ok().expect("unreachable");
                     let kind = Kind::Dir {
                         parent: Some(cur_dir_inode),
-                        path: adjusted_path,
+                        paths: vec![adjusted_path],
                         entries: Default::default(),
                     };
                     let new_inode = wasi_try!(state.fs.create_inode(kind, false, comp.to_string()));
@@ -1518,12 +1541,13 @@ pub fn path_filestat_get(
         flags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0,
     ));
     {
-        let base_inode = state.fs.get_fd(fd).unwrap().inode;
-        let path = match &state.fs.inodes[base_inode].kind {
-            Kind::Dir { ref path, .. } => {
-                path.join(path_string)
-            },
-            kind => unimplemented!("unhandled inode fd={} {:?}", fd, kind),
+        let path = match &state.fs.inodes[file_inode].kind {
+            Kind::File { ref path, .. } => path,
+            Kind::Dir { ref paths, .. } => {
+                assert_eq!(paths.len(), 1);
+                &paths[0]
+            }
+            kind => unimplemented!("unhandled inode {:?}", kind),
         };
         pkg.borrow_mut().as_mut().map(|mut pkg| pkg.touch_path(&path));
     }
@@ -1884,7 +1908,9 @@ pub fn path_open(
                 dirflags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0
             ));
             let new_file_host_path = match &state.fs.inodes[parent_inode].kind {
-                Kind::Dir { path, .. } => {
+                Kind::Dir { paths, .. } => {
+                    warn!("warning: path_open - {:?}", paths);
+                    let path = &paths[0];
                     let mut new_path = path.clone();
                     new_path.push(&new_entity_name);
                     new_path
@@ -1946,12 +1972,10 @@ pub fn path_open(
 
 
     {
-        let base_inode = state.fs.get_fd(dirfd).unwrap().inode;
-        let path = match &state.fs.inodes[base_inode].kind {
-            Kind::Dir { ref path, .. } => {
-                path.join(path_string)
-            },
-            kind => unimplemented!("unhandled inode fd={} {:?}", dirfd, kind),
+        let path = match &state.fs.inodes[inode].kind {
+            Kind::File { ref path, .. } => path,
+            Kind::Dir { ref paths, .. } => &paths[0],
+            kind => unimplemented!("unhandled inode {:?}", kind),
         };
         pkg.borrow_mut().as_mut().map(|mut pkg| {
             if !new_file {
@@ -2059,7 +2083,9 @@ pub fn path_remove_directory(
             .get_parent_inode_at_path(fd, std::path::Path::new(path_str), false));
 
     let host_path_to_remove = match &state.fs.inodes[inode].kind {
-        Kind::Dir { entries, path, .. } => {
+        Kind::Dir { entries, paths, .. } => {
+            assert_eq!(paths.len(), 1);
+            let path = &paths[0];
             if !entries.is_empty() {
                 return __WASI_ENOTEMPTY;
             } else {
@@ -2151,7 +2177,9 @@ pub fn path_rename(
         wasi_try!(state.fs.get_parent_inode_at_path(new_fd, target_path, true));
 
     let host_adjusted_target_path = match &state.fs.inodes[target_parent_inode].kind {
-        Kind::Dir { entries, path, .. } => {
+        Kind::Dir { entries, paths, .. } => {
+            assert_eq!(paths.len(), 1);
+            let path = &paths[0];
             if entries.contains_key(&target_entry_name) {
                 return __WASI_EEXIST;
             }
@@ -2197,7 +2225,7 @@ pub fn path_rename(
                 }
             }
         }
-        Kind::Dir { path, .. } => unimplemented!("wasi::path_rename on Directories"),
+        Kind::Dir { paths, .. } => unimplemented!("wasi::path_rename on Directories"),
         Kind::Buffer { .. } => {}
         Kind::Symlink { .. } => {}
         Kind::Root { .. } => unreachable!("The root can not be moved"),
@@ -2214,12 +2242,20 @@ pub fn path_rename(
     {
         let old_inode = state.fs.get_fd(old_fd).unwrap().inode;
         let old_path = match &state.fs.inodes[old_inode].kind {
-            Kind::Dir { ref path, .. } => path.join(source_str),
+            Kind::Dir { ref paths, .. } => {
+                assert_eq!(paths.len(), 1);
+                let path = &paths[0];
+                path.join(source_str)
+            },
             kind => unimplemented!("unhandled inode fd={}", old_fd),
         };
         let new_inode = state.fs.get_fd(new_fd).unwrap().inode;
         let new_path = match &state.fs.inodes[new_inode].kind {
-            Kind::Dir { ref path, .. } => path.join(target_str),
+            Kind::Dir { ref paths, .. } => {
+                assert_eq!(paths.len(), 1);
+                let path = &paths[0];
+                path.join(target_str)
+            },
             kind => unimplemented!("unhandled inode fd={}", new_fd),
         };
         pkg.borrow_mut().as_mut().map(|mut pkg| {
