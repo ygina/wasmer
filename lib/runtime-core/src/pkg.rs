@@ -176,6 +176,7 @@ impl Pkg {
         println!("preopened: {:?}", self.internal.preopened);
         println!("args: {:?}", self.internal.args);
         println!("envs: {:?}", self.internal.envs);
+        println!("mapped_dirs: {:?}", self.internal.mapped_dirs);
         println!("binary: {} bytes", self.wasm_binary.len());
         // print_fs(self.root.path(), 0)?;
         println!("result: {:?}", self.result);
@@ -270,7 +271,10 @@ impl Pkg {
     /// Set the preopened directories.
     pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> io::Result<Self> {
         for path in &preopened {
-            fs::create_dir(self.root.path().join(path))?;
+            let path = self.root.path().join(path);
+            if !path.exists() {
+                fs::create_dir(path)?;
+            }
         }
         self.internal.preopened = preopened;
         Ok(self)
