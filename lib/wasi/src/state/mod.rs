@@ -312,9 +312,10 @@ impl WasiFs {
             } else {
                 path.to_string_lossy().into_owned()
             };
+            let key = key.strip_suffix("/").unwrap_or(&key);
             if let Kind::Root { entries } = &wasi_fs.inodes[root_inode].kind {
                 // Preopened directory with the same alias already exists
-                if let Some(existing_inode) = entries.get(&key) {
+                if let Some(existing_inode) = entries.get(key) {
                     let existing_inode = existing_inode.clone();
                     if let Kind::Dir { paths, .. } = &mut wasi_fs.inodes[existing_inode].kind {
                         paths.push(path.clone());
@@ -388,7 +389,7 @@ impl WasiFs {
 
                 rights
             };
-            let inode = wasi_fs.create_inode(kind, true, key.clone())
+            let inode = wasi_fs.create_inode(kind, true, key.to_string())
             .map_err(|e| {
                 format!(
                     "Failed to create inode for preopened dir: WASI error code: {}",
@@ -413,7 +414,7 @@ impl WasiFs {
                 .create_fd(rights, rights, 0, fd_flags, inode)
                 .map_err(|e| format!("Could not open fd for file {:?}: {}", path, e))?;
             if let Kind::Root { entries } = &mut wasi_fs.inodes[root_inode].kind {
-                let existing_entry = entries.insert(key, inode);
+                let existing_entry = entries.insert(key.to_string(), inode);
                 assert!(existing_entry.is_none())
             }
             wasi_fs.preopen_fds.push(fd);
