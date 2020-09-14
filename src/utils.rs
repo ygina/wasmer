@@ -1,7 +1,5 @@
 //! Utility functions for the WebAssembly module
-use std::fs::File;
 use std::io;
-use std::io::Read;
 use std::path::PathBuf;
 
 use wasmer_runtime::{types::Type, Module, Value};
@@ -22,11 +20,17 @@ pub enum InvokeError {
 
 /// Read the contents of a file
 pub fn read_file_contents(path: &PathBuf) -> Result<Vec<u8>, io::Error> {
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut file = File::open(path)?;
-    file.read_to_end(&mut buffer)?;
-    // We force to close the file
-    drop(file);
+    let buffer = loop {
+        let mut retry_limit = 10;
+        let buffer = std::fs::read(path)?;
+        if !buffer.is_empty() {
+            break buffer;
+        }
+        retry_limit -= 1;
+        if retry_limit == 0 {
+            break vec![];
+        }
+    };
     Ok(buffer)
 }
 
