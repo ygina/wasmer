@@ -56,8 +56,8 @@ use wasmer_runtime_core::backend::BackendCompilerConfig;
 )))]
 compile_error!("Please enable one or more of the compiler backends");
 
-/// Re-export package config.
-pub use wasmer_runtime_core::pkg::PkgConfig;
+/// Re-export package types.
+pub use wasmer_runtime_core::pkg::{PkgConfig, Import};
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct PrestandardFeatures {
@@ -130,7 +130,9 @@ pub struct Run {
     #[structopt(parse(from_os_str))]
     pub path: PathBuf,
 
-    /// Whether to use input path for replay
+    /// Whether to use input path for replay. Computations replayed from the
+    /// command-line cannot must have a properly-formatted `config` file and
+    /// `root` directory at the input path.
     #[structopt(long = "replay")]
     pub replay: bool,
 
@@ -164,7 +166,7 @@ pub struct Run {
 
     /// Map a host directory to a different location for the wasm module
     #[structopt(long = "mapdir", multiple = true)]
-    mapped_dirs: Vec<String>,
+    pub mapped_dirs: Vec<String>,
 
     /// Pass custom environment variables
     #[structopt(long = "env", multiple = true)]
@@ -905,7 +907,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
         &format!("malformed package: no config file at {:?}", config_path));
     let mut buffer = vec![];
     config_file.read_to_end(&mut buffer).expect("error reading config");
-    let config: PkgConfig =
+    let mut config: PkgConfig =
         bincode::deserialize(&buffer).expect("malformed config file");
 
     // Set working directory to root.
@@ -918,6 +920,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
     options.replay = false;
     options.path = config.binary_path.expect("expected binary path");
     options.pre_opened_directories = vec![PathBuf::from(".")];
+    options.mapped_dirs.append(&mut config.mapped_dirs);
     options.args = config.args;
     options.env_vars = config.envs;
 

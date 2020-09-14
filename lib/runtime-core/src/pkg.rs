@@ -44,11 +44,24 @@ pub struct PkgConfig {
     /// Path to the binary
     pub binary_path: Option<PathBuf>,
     /// Mapped directories
-    pub mapped_dirs: Vec<(String, PathBuf)>,
+    pub mapped_dirs: Vec<String>,
     /// Arguments
     pub args: Vec<String>,
     /// Environment variables
     pub envs: Vec<String>,
+}
+
+/// External import.
+#[derive(Debug, Serialize, Deserialize)]
+#[repr(C)]
+pub enum Import {
+    /// Wasm package manager
+    Wapm {
+        /// Package name
+        name: String,
+        /// Package version
+        version: String,
+    }
 }
 
 // fn print_fs(path: &Path, level: usize) -> io::Result<()> {
@@ -282,7 +295,11 @@ impl Pkg {
     /// Directories must be read-only. Typically, they represent libraries
     /// or packages installed from a standard package manager.
     pub fn map_dirs(mut self, dirs: Vec<(String, PathBuf)>) -> Self {
-        self.internal.mapped_dirs = dirs;
+        self.internal.mapped_dirs = dirs
+            .into_iter()
+            .map(|(k, v)| (k, v.into_os_string().into_string().unwrap()))
+            .map(|(k, v)| format!("{}:{}", k, v))
+            .collect();
         self
     }
 }
