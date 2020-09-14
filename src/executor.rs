@@ -366,18 +366,13 @@ fn execute_wasi(
     let args = options.args.iter().cloned().map(|arg| arg.into_bytes());
     let preopened_files = options.pre_opened_directories.clone();
 
-    // let package = if options.record {
-    let package = {
-        Some(wasmer_runtime_core::pkg::Pkg::new()
+    let package = Some(wasmer_runtime_core::pkg::Pkg::new(options.record)
         .wasm_binary(std::path::Path::new(&name), wasm_binary.to_vec())
         .args(options.args.clone())
         .envs(&env_vars)
         .preopen_dirs(preopened_files.clone())
         .map_err(|e| format!("Failed to preopen directories: {:?}", e))?
-        .map_dirs(mapped_dirs.clone()))
-    // } else {
-    //     None
-    };
+        .map_dirs(mapped_dirs.clone()));
     let mut wasi_state_builder = wasmer_wasi::state::WasiState::new(&name);
     wasi_state_builder
         .args(args)
@@ -684,12 +679,8 @@ fn execute_wasm(options: &Run) -> Result<Option<PkgResult>, String> {
     if wasmer_emscripten::is_emscripten_module(&module) {
         let mut emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new(&module)?;
         let import_object = wasmer_emscripten::generate_emscripten_env(&mut emscripten_globals);
-        let package = if options.record {
-            Some(wasmer_runtime_core::pkg::Pkg::new()
-                .wasm_binary(wasm_path, wasm_binary.to_vec()))
-        } else {
-            None
-        };
+        let package = Some(wasmer_runtime_core::pkg::Pkg::new(options.record)
+            .wasm_binary(wasm_path, wasm_binary.to_vec()));
         let mut instance = module
             .instantiate(&import_object, package)
             .map_err(|e| format!("Can't instantiate emscripten module: {:?}", e))?;
@@ -729,12 +720,8 @@ fn execute_wasm(options: &Run) -> Result<Option<PkgResult>, String> {
             )
         } else {
             let import_object = wasmer_runtime_core::import::ImportObject::new();
-            let package = if options.record {
-                Some(wasmer_runtime_core::pkg::Pkg::new()
-                    .wasm_binary(wasm_path, wasm_binary.to_vec()))
-            } else {
-                None
-            };
+            let package = Some(wasmer_runtime_core::pkg::Pkg::new(options.record)
+                .wasm_binary(wasm_path, wasm_binary.to_vec()));
             let mut instance = module
                 .instantiate(&import_object, package)
                 .map_err(|e| format!("Can't instantiate module: {:?}", e))?;

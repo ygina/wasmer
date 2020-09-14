@@ -13,6 +13,8 @@ use tempdir::TempDir;
 #[derive(Debug)]
 #[repr(C)]
 pub struct Pkg {
+    /// Whether to log the package
+    record: bool,
     /// Input files required to replicate the computation
     pub root: TempDir,
     /// Created files
@@ -64,19 +66,6 @@ pub struct PkgConfig {
 //     Ok(())
 // }
 
-impl Drop for Pkg {
-    fn drop(&mut self) {
-        match self.log_package() {
-            Ok(()) => {},
-            Err(e) => println!("ERROR LOGGING PACKAGE: {:?}", e),
-        };
-        match self.zip_package() {
-            Ok(()) => {},
-            Err(e) => println!("ERROR ZIPPING PACKAGE: {:?}", e),
-        };
-    }
-}
-
 impl Pkg {
     /// Unwrap the result.
     fn result(&mut self) -> &mut PkgResult {
@@ -85,15 +74,24 @@ impl Pkg {
 
     /// Take the result.
     pub fn take_result(&mut self) -> Option<PkgResult> {
+        if self.record {
+            match self.log_package() {
+                Ok(()) => {},
+                Err(e) => println!("ERROR LOGGING PACKAGE: {:?}", e),
+            };
+            match self.zip_package() {
+                Ok(()) => {},
+                Err(e) => println!("ERROR ZIPPING PACKAGE: {:?}", e),
+            };
+        }
         self.result.take()
     }
 
     /// Indicate this file was accessed and must be preserved in the archive.
     /// The file is in its original state from before execution. It already
     /// existed prior to execution and has not yet been modified.
-    ///
-    /// Returns whether the path was newly added.
-    pub fn touch_path(&mut self, path: &Path) -> bool {
+    pub fn touch_path(&mut self, path: &Path) {
+        if !self.record { return; }
         let new_path = self.root.path().join(path);
         if !new_path.exists() && !self.created.contains(path) {
             // Copy the path to the new path if the new path doesn't exist
@@ -107,15 +105,13 @@ impl Pkg {
                 };
                 fs::copy(path, new_path).expect("unvalidated WASI");
             }
-            true
-        } else {
-            false
         }
     }
 
     /// Create a file. Indicate this file was newly created and future accesses
     /// to this file should not preserve anything in the input archive.
     pub fn create_file(&mut self, path: &Path) {
+        if !self.record { return; }
         debug!("create_file {:?}", path);
         self.created.insert(path.to_path_buf());
     }
@@ -124,6 +120,7 @@ impl Pkg {
     /// future accesses to this file should not preserve anything in the input
     /// archive.
     pub fn create_dir(&mut self, path: &Path) {
+        if !self.record { return; }
         debug!("create_dir {:?}", path);
         unimplemented!("create_dir {:?}", path)
     }
@@ -135,12 +132,14 @@ impl Pkg {
     /// implementation. That is, the path should be a directory and its file
     /// names should have already been read.
     pub fn read_dir(&mut self, path: &Path) {
+        if !self.record { return; }
         debug!("read_dir {:?}", path);
         unimplemented!("read_dir {:?}", path)
     }
 
     /// Rename a path.
     pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) {
+        if !self.record { return; }
         debug!("rename {:?} {:?}", old_path, new_path);
         self.created.insert(new_path.to_path_buf());
         self.touch_path(old_path);
@@ -148,12 +147,14 @@ impl Pkg {
 
     /// Delete a path.
     pub fn delete_path(&mut self, path: &Path) {
+        if !self.record { return; }
         debug!("delete {:?}", path);
         self.touch_path(path);
     }
 
     /// Write bytes to a path.
     pub fn write_path(&mut self, path: &Path, bytes: &Vec<u8>) {
+        if !self.record { return; }
         debug!("write {:?} {} bytes", path, bytes.len());
         self.touch_path(path);
     }
@@ -220,8 +221,9 @@ impl Pkg {
 
 impl Pkg {
     /// Instantiate a new package.
-    pub fn new() -> Self {
+    pub fn new(record: bool) -> Self {
         Pkg {
+            record,
             root: TempDir::new("wasmer").expect("failed to create tempdir"),
             created: HashSet::new(),
             wasm_binary: Vec::new(),
