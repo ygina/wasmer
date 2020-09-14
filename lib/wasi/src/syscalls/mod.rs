@@ -1438,7 +1438,6 @@ pub fn path_create_directory(
                 paths,
                 parent,
             } => {
-                assert_eq!(paths.len(), 1);
                 match comp.borrow() {
                     ".." => {
                         if let Some(p) = parent {
