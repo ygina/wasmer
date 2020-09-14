@@ -930,7 +930,7 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
     println!("{:?}", config);
     options.replay = false;
     options.path = config.binary_path.expect("expected binary path");
-    options.pre_opened_directories = config.preopened;
+    options.pre_opened_directories = vec![PathBuf::from(".")];
     options.args = config.args;
     options.env_vars = config.envs;
 

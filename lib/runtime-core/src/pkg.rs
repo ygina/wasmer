@@ -41,8 +41,6 @@ pub struct PkgResult {
 pub struct PkgConfig {
     /// Path to the binary
     pub binary_path: Option<PathBuf>,
-    /// Pre-opened directories
-    pub preopened: Vec<PathBuf>,
     /// Mapped directories
     pub mapped_dirs: Vec<(String, PathBuf)>,
     /// Arguments
@@ -173,7 +171,6 @@ impl Pkg {
     /// Log package information.
     pub fn log_package(&self) -> io::Result<()> {
         println!("Writing package.");
-        println!("preopened: {:?}", self.internal.preopened);
         println!("args: {:?}", self.internal.args);
         println!("envs: {:?}", self.internal.envs);
         println!("mapped_dirs: {:?}", self.internal.mapped_dirs);
@@ -230,7 +227,6 @@ impl Pkg {
             wasm_binary: Vec::new(),
             internal: PkgConfig {
                 binary_path: None,
-                preopened: Vec::new(),
                 mapped_dirs: Vec::new(),
                 args: Vec::new(),
                 envs: Vec::new(),
@@ -268,15 +264,14 @@ impl Pkg {
         self
     }
 
-    /// Set the preopened directories.
-    pub fn preopen_dirs(mut self, preopened: Vec<PathBuf>) -> io::Result<Self> {
+    /// Initialize preopened directories in the package root.
+    pub fn preopen_dirs(self, preopened: Vec<PathBuf>) -> io::Result<Self> {
         for path in &preopened {
             let path = self.root.path().join(path);
             if !path.exists() {
                 fs::create_dir(path)?;
             }
         }
-        self.internal.preopened = preopened;
         Ok(self)
     }
 
