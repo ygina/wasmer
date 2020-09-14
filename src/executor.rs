@@ -928,6 +928,28 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
     run(options)
 }
 
+/// Runs logic for the `replay` subcommand, but takes config as an argument.
+///
+/// Directly interprets the input path as the root directory, as opposed to a
+/// package directory containing a config and a root.
+pub fn replay_with_config(options: &mut Run, config: PkgConfig) -> Option<PkgResult> {
+    // Set working directory to root.
+    let root = &options.path;
+    assert!(root.is_dir());
+    std::env::set_current_dir(root).unwrap();
+
+    // Edit options based on the config.
+    options.replay = false;
+    options.path = config.binary_path.expect("expected binary path");
+    options.pre_opened_directories = vec![PathBuf::from(".")];
+    options.mapped_dirs = config.mapped_dirs;
+    options.args = config.args;
+    options.env_vars = config.envs;
+
+    // Run with new config.
+    run(options)
+}
+
 fn get_compiler_by_backend(backend: Backend, _opts: &Run) -> Option<Box<dyn Compiler>> {
     Some(match backend {
         #[cfg(feature = "backend-singlepass")]
