@@ -51,19 +51,6 @@ pub struct PkgConfig {
     pub envs: Vec<String>,
 }
 
-/// External import.
-#[derive(Debug, Serialize, Deserialize)]
-#[repr(C)]
-pub enum Import {
-    /// Wasm package manager
-    Wapm {
-        /// Package name
-        name: String,
-        /// Package version
-        version: String,
-    }
-}
-
 // fn print_fs(path: &Path, level: usize) -> io::Result<()> {
 //     let prefix = (0..level).map(|_| "--").collect::<String>();
 //     let filename = path.file_name().unwrap().to_str().unwrap();

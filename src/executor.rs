@@ -57,7 +57,7 @@ use wasmer_runtime_core::backend::BackendCompilerConfig;
 compile_error!("Please enable one or more of the compiler backends");
 
 /// Re-export package types.
-pub use wasmer_runtime_core::pkg::{PkgConfig, Import};
+pub use wasmer_runtime_core::pkg::PkgConfig;
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct PrestandardFeatures {
