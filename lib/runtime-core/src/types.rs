@@ -414,6 +414,7 @@ pub trait LocalImport {
 macro_rules! define_map_index {
     ($ty:ident) => {
         /// Typed Index
+        #[repr(C)]
         #[derive(Serialize, Deserialize)]
         #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $ty (u32);

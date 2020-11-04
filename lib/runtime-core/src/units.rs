@@ -15,6 +15,7 @@ pub const WASM_MAX_PAGES: usize = 65_536;
 pub const WASM_MIN_PAGES: usize = 256;
 
 /// Units of WebAssembly pages (as specified to be 65,536 bytes).
+#[repr(C)]
 #[derive(Serialize, Deserialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pages(pub u32);
 
