@@ -56,8 +56,7 @@ use wasmer_runtime_core::backend::BackendCompilerConfig;
 )))]
 compile_error!("Please enable one or more of the compiler backends");
 
-/// Re-export package types.
-pub use wasmer_runtime_core::pkg::PkgConfig;
+use wasmer_runtime_core::pkg::PkgConfig;
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct PrestandardFeatures {
@@ -932,7 +931,13 @@ fn replay(options: &mut Run) -> Option<PkgResult> {
 ///
 /// Directly interprets the input path as the root directory, as opposed to a
 /// package directory containing a config and a root.
-pub fn replay_with_config(options: &mut Run, config: PkgConfig) -> Option<PkgResult> {
+pub fn replay_with_config(
+    options: &mut Run,
+    binary_path: PathBuf,
+    mapped_dirs: Vec<String>,
+    args: Vec<String>,
+    envs: Vec<String>,
+) -> Option<PkgResult> {
     // Set working directory to root.
     let root = &options.path;
     assert!(root.is_dir());
@@ -940,11 +945,11 @@ pub fn replay_with_config(options: &mut Run, config: PkgConfig) -> Option<PkgRes
 
     // Edit options based on the config.
     options.replay = false;
-    options.path = config.binary_path.expect("expected binary path");
+    options.path = binary_path;
     options.pre_opened_directories = vec![PathBuf::from(".")];
-    options.mapped_dirs = config.mapped_dirs;
-    options.args = config.args;
-    options.env_vars = config.envs;
+    options.mapped_dirs = mapped_dirs;
+    options.args = args;
+    options.env_vars = envs;
 
     // Run with new config.
     run(options)
